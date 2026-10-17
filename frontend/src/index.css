@@ -1,0 +1,160 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   AawazDoc design tokens
+   Identity: warm bone paper + deep ink panels + an acid lime signal.
+   Display type is a serif, data is mono, everything else is Inter Tight.
+   ========================================================================== */
+
+@layer base {
+  :root {
+    --bg: 244 241 234;
+    --surface: 255 255 255;
+    --surface-2: 250 248 244;
+    --ink: 12 13 15;
+    --ink-2: 58 61 66;
+    --ink-3: 108 112 119;
+    --line: 226 221 210;
+    --primary: 205 245 100;
+    --primary-ink: 12 13 15;
+    --signal: 255 106 61;
+    --violet: 118 86 255;
+    --teal: 13 158 134;
+    --amber: 219 148 12;
+    /* ink panels: deep ink on bone paper in light mode */
+    --panel: 10 11 12;
+    --panel-soft: 19 21 24;
+    --radius: 14px;
+    color-scheme: light;
+  }
+
+  .dark {
+    --bg: 10 11 12;
+    --surface: 19 21 24;
+    --surface-2: 25 28 32;
+    --ink: 242 239 232;
+    --ink-2: 168 173 180;
+    --ink-3: 118 124 132;
+    --line: 41 45 50;
+    --primary: 205 245 100;
+    --primary-ink: 10 11 12;
+    --signal: 255 122 80;
+    --violet: 158 134 255;
+    --teal: 45 200 175;
+    --amber: 240 178 56;
+    /* in dark mode the page is near black, so panels lift to stay readable */
+    --panel: 24 26 30;
+    --panel-soft: 33 36 41;
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: rgb(var(--line));
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-bg text-ink antialiased;
+    font-family: "Inter Tight", Inter, system-ui, sans-serif;
+    font-feature-settings: "cv05", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: rgb(var(--primary));
+    color: rgb(var(--primary-ink));
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--ink));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Numbers should never wobble. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    opacity: 0.5;
+    cursor: pointer;
+  }
+  .dark input[type="date"]::-webkit-calendar-picker-indicator,
+  .dark input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
+}
+
+@layer utilities {
+  /* Uppercase mono micro-label used across the product. */
+  .label {
+    @apply font-mono text-[10.5px] font-medium uppercase tracking-[0.16em];
+  }
+
+  /* Dot grid used behind ink panels. */
+  .dotgrid {
+    background-image: radial-gradient(currentColor 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  /* Hairline grid used behind the landing hero. */
+  .gridlines {
+    background-image: linear-gradient(currentColor 1px, transparent 1px),
+      linear-gradient(90deg, currentColor 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+
+  .scrollbar-slim {
+    scrollbar-width: thin;
+  }
+  .scrollbar-slim::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    background: rgb(var(--line));
+    border-radius: 999px;
+  }
+  .scrollbar-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Vertical marquee mask for tickers. */
+  .fade-y {
+    mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
+  }
+  .fade-x {
+    mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  }
+}
+
+/* Keyframes referenced from inline styles (survive Tailwind tree-shaking). */
+@keyframes wave {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

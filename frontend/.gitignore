@@ -1,0 +1,10 @@
+node_modules
+dist
+dist-live
+dist-preview
+dist-ssr
+*.local
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
