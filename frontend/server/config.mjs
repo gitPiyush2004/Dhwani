@@ -84,6 +84,12 @@ export const config = {
     autoSync: bool("BOLNA_AUTO_SYNC", true),
   },
 
+  /** Dashboard chat agent and call summaries. OpenAI wins when both are set. */
+  openai: {
+    apiKey: env("OPENAI_API_KEY"),
+    model: env("OPENAI_MODEL", "gpt-5-mini"),
+  },
+
   gemini: {
     apiKey: env("GEMINI_API_KEY"),
     model: env("GEMINI_MODEL", "gemini-3.5-flash-lite"),
@@ -111,6 +117,9 @@ export const integrations = {
   sheets: () => Boolean(config.sheets.id && config.sheets.credentials),
   bolna: () => Boolean(config.bolna.apiKey),
   gemini: () => Boolean(config.gemini.apiKey),
+  openai: () => Boolean(config.openai.apiKey),
+  /** Any LLM for the dashboard chat and call analysis. */
+  llm: () => Boolean(config.openai.apiKey || config.gemini.apiKey),
   meta: () => Boolean(config.messaging.meta.token && config.messaging.meta.phoneNumberId),
   twilio: () => Boolean(config.messaging.twilio.accountSid && config.messaging.twilio.authToken),
 };

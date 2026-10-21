@@ -33,7 +33,10 @@ try {
   const { agentId: id, created } = await syncAgent();
   console.log(`${created ? "Created" : "Updated"} agent ${id}`);
   if (created && !config.bolna.agentId) {
-    console.log(`Saved in the Settings tab. To pin it, add BOLNA_AGENT_ID=${id} to server/.env.`);
+    console.log(
+      `${store.kind === "sheets" ? "Saved in the sheet's Settings tab." : "Saved in the local data file."} ` +
+        `Add BOLNA_AGENT_ID=${id} to server/.env so a running API uses it too.`
+    );
   }
   if (args.includes("--link")) {
     await linkInboundNumber();

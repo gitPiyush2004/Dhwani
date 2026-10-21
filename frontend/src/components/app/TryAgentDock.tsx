@@ -50,7 +50,7 @@ export function TryAgentDock() {
 
   const [messages, setMessages] = useState<ChatLine[]>([]);
   const [sessionId, setSessionId] = useState(newSession);
-  const [engine, setEngine] = useState<"gemini" | "rules" | null>(null);
+  const [engine, setEngine] = useState<"openai" | "gemini" | "rules" | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
@@ -273,7 +273,7 @@ export function TryAgentDock() {
               {!USE_LIVE_API
                 ? "Visual demo only. Replies are canned and it never gives medical advice."
                 : engine === "rules"
-                  ? "Rule-based replies. Add GEMINI_API_KEY on the server for the full agent. Test bookings are never saved."
+                  ? "Rule-based replies. Add OPENAI_API_KEY on the server for the full agent. Test bookings are never saved."
                   : "Same prompt and tools as the phone line. Test bookings are never saved."}
             </p>
           </div>

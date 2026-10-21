@@ -94,8 +94,9 @@ export function checkSlots({ doctor: doctorQuery, date: dateInput }) {
       date: day.date,
       day: spokenDate(day.date),
       available_times: offer.map(time12),
+      all_free_times: slots.map(time12),
       total_free: slots.length,
-      message: `${doctor.name} has ${slots.length} free slots on ${spokenDate(day.date)}. Offer at most three of these: ${offer.map(time12).join(", ")}.`,
+      message: `${doctor.name} has ${slots.length} free slots on ${spokenDate(day.date)}. Suggest at most three, for example ${pickSlots(slots, 3).map(time12).join(", ")}. If the caller asks for a specific time, it is free only if it is in all_free_times: ${slots.map(time12).join(", ")}.`,
     };
   }
 

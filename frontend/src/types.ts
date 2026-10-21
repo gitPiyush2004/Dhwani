@@ -308,7 +308,7 @@ export interface AgentChatReply {
   /** tools the agent used, e.g. "check_slots" */
   actions: string[];
   escalated: boolean;
-  engine: "gemini" | "rules";
+  engine: "openai" | "gemini" | "rules";
 }
 
 export interface Integrations {
@@ -334,6 +334,6 @@ export interface Integrations {
     wallet: number | null;
   };
   messaging: { configured: boolean; channels: string[]; lastError: string | null };
-  gemini: { configured: boolean; model: string | null };
+  llm: { configured: boolean; provider: "openai" | "gemini" | null; model: string | null };
   auth: { required: boolean };
 }

@@ -70,7 +70,7 @@ import { runReminders, startReminderSchedule } from "./reminders.mjs";
 import { db } from "./state.mjs";
 import { createStore } from "./store/index.mjs";
 import { clinicDate, resolveDate } from "./time.mjs";
-import { geminiModel } from "./agent/gemini.mjs";
+import { llmModel, llmProvider } from "./agent/llm.mjs";
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
@@ -184,7 +184,7 @@ route("GET", /^\/api\/integrations$/, "admin", async (_req, res, _m, ctx) => {
       wallet,
     },
     messaging: messagingStatus(),
-    gemini: { configured: integrations.gemini(), model: integrations.gemini() ? geminiModel() : null },
+    llm: { configured: integrations.llm(), provider: llmProvider(), model: llmModel() },
     auth: { required: authRequired() },
   });
 });
@@ -591,7 +591,7 @@ route("POST", /^\/api\/agent\/test$/, "admin", async (req, res) => {
       ? "The agent handed this to staff. Right for emergencies and requests for a human; otherwise add the answer to the knowledge base."
       : unsure
         ? "The agent was not sure. Add this to the FAQs or knowledge base so it can answer directly."
-        : `Answered${out.actions.length ? ` using ${[...new Set(out.actions)].join(", ")}` : ""}${out.engine === "rules" ? " (rule-based: set GEMINI_API_KEY for the full agent)" : ""}.`,
+        : `Answered${out.actions.length ? ` using ${[...new Set(out.actions)].join(", ")}` : ""}${out.engine === "rules" ? " (rule-based: set OPENAI_API_KEY for the full agent)" : ""}.`,
   });
 });
 
@@ -759,7 +759,7 @@ if (isMain) {
     console.log(`  phone      ${integrations.bolna() ? `Bolna, agent ${agentId() || "(not created yet: POST /api/integrations/bolna/sync)"}` : "off (set BOLNA_API_KEY)"}`);
     console.log(`  public url ${config.publicUrl || "not set (Bolna cannot reach this server until PUBLIC_URL is set)"}`);
     console.log(`  messages   ${messagingStatus().channels.join(", ") || "off (set META_WA_* or TWILIO_*)"}`);
-    console.log(`  chat agent ${integrations.gemini() ? `Gemini ${config.gemini.model}` : "rule-based (set GEMINI_API_KEY)"}`);
+    console.log(`  chat agent ${integrations.llm() ? `${llmProvider()} ${llmModel()}` : "rule-based (set OPENAI_API_KEY or GEMINI_API_KEY)"}`);
     console.log(`  login      ${authRequired() ? "required" : "open (set ADMIN_PASSWORD before going public)"}`);
     startReminderSchedule();
   });

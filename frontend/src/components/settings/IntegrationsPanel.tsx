@@ -90,7 +90,7 @@ export function IntegrationsPanel() {
   if (q.isLoading) return <Skeleton className="h-72 w-full rounded-lg" />;
   if (q.isError || !q.data) return <ErrorState title="Couldn't load integrations" onRetry={() => q.refetch()} />;
 
-  const { storage, bolna, messaging, gemini, auth } = q.data;
+  const { storage, bolna, messaging, llm, auth } = q.data;
   const phoneReady = bolna.configured && bolna.secretSet && !!bolna.publicUrl;
 
   return (
@@ -234,11 +234,11 @@ export function IntegrationsPanel() {
           <CardTitle className="flex items-center gap-2">
             <Bot className="h-4 w-4 text-ink3" /> Chat agent and security
           </CardTitle>
-          <Status ok={gemini.configured && auth.required} on="All set" off="Check" />
+          <Status ok={llm.configured && auth.required} on="All set" off="Check" />
         </CardHeader>
         <CardContent>
           <dl>
-            <Row k="Chat and call analysis" v={gemini.configured ? `Gemini ${gemini.model}` : "rule-based (set GEMINI_API_KEY)"} />
+            <Row k="Chat and call analysis" v={llm.configured ? `${llm.provider === "openai" ? "OpenAI" : "Gemini"} ${llm.model}` : "rule-based (set OPENAI_API_KEY)"} />
             <Row
               k="Dashboard login"
               v={

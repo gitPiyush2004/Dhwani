@@ -16,7 +16,7 @@
 import { integrations } from "./config.mjs";
 import { makeId } from "./data.mjs";
 import { persistRow, samePhone } from "./domain.mjs";
-import { generate } from "./agent/gemini.mjs";
+import { completeJSON } from "./agent/llm.mjs";
 import { db } from "./state.mjs";
 import { spokenWhen } from "./time.mjs";
 
@@ -116,7 +116,7 @@ const doctorName = (id) => db.doctors.find((d) => d.id === id)?.name ?? "the doc
 /* --- AI analysis --------------------------------------------------------- */
 
 async function analyse(lines, facts) {
-  if (!integrations.gemini() || !lines.length) return null;
+  if (!integrations.llm() || !lines.length) return null;
   const transcript = lines.map((l) => `${l.speaker === "ai" ? "Receptionist" : "Caller"}: ${l.text}`).join("\n").slice(0, 12_000);
   const prompt = `You analyse phone calls to an Indian clinic's AI receptionist. Return JSON only with these keys:
 "callerName" (string or null, the patient's name if said),
@@ -134,8 +134,7 @@ Facts from the booking system: ${facts}
 Transcript:
 ${transcript}`;
   try {
-    const out = await generate({ contents: [{ role: "user", parts: [{ text: prompt }] }], json: true, maxTokens: 800 });
-    const parsed = JSON.parse(out.text.replace(/^```(json)?|```$/g, "").trim());
+    const parsed = await completeJSON(prompt);
     return parsed && typeof parsed === "object" ? parsed : null;
   } catch (err) {
     console.warn("[calls] analysis failed, using heuristics:", err.message);

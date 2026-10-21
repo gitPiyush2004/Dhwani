@@ -13,6 +13,8 @@
 import { integrations } from "../config.mjs";
 import { db } from "../state.mjs";
 import { generate } from "./gemini.mjs";
+import { llmProvider } from "./llm.mjs";
+import { complete } from "./openai.mjs";
 import { buildSystemPrompt } from "./prompt.mjs";
 import { TOOL_DEFS, TOOLS, checkSlots, getClinicInfo } from "./tools.mjs";
 
@@ -27,7 +29,7 @@ function session(id) {
   const now = Date.now();
   for (const [k, s] of sessions) if (now - s.at > SESSION_TTL_MS) sessions.delete(k);
   const key = id || `anon-${now}`;
-  if (!sessions.has(key)) sessions.set(key, { contents: [], at: now });
+  if (!sessions.has(key)) sessions.set(key, { contents: [], messages: [], at: now });
   const s = sessions.get(key);
   s.at = now;
   return s;
@@ -44,13 +46,16 @@ const fallbackTool = {
 };
 
 /**
- * @returns {Promise<{ reply: string, actions: string[], escalated: boolean, engine: "gemini" | "rules" }>}
+ * @returns {Promise<{ reply: string, actions: string[], escalated: boolean, engine: "openai" | "gemini" | "rules" }>}
  */
 export async function chat({ sessionId, message, history }) {
   const text = String(message ?? "").trim();
-  if (!integrations.gemini()) return rulesReply(text);
+  const provider = llmProvider();
+  if (!provider) return rulesReply(text);
 
   const s = session(sessionId);
+  if (provider === "openai") return openaiChat(s, text, history);
+
   if (!s.contents.length && Array.isArray(history)) {
     // A client without a session id can send the visible history instead.
     for (const h of history.slice(-12)) {
@@ -67,6 +72,48 @@ export async function chat({ sessionId, message, history }) {
     // Never leave the dock silent: answer from the rules and start a fresh history.
     console.warn("[agent] Gemini failed, using rules:", err.message);
     s.contents = [];
+    return { ...rulesReply(text), error: err.message };
+  }
+}
+
+/** Runs one tool call from the model, in dry-run mode. */
+function runTool(name, args, state) {
+  state.actions.push(name);
+  if (name === "transfer_to_staff") {
+    state.escalated = true;
+    return { ok: true, message: "Staff have been alerted and will call back on the caller's number." };
+  }
+  if (TOOLS[name]) return TOOLS[name].run(args ?? {}, { dryRun: true });
+  return { ok: false, message: `Unknown tool ${name}` };
+}
+
+async function openaiChat(s, text, history) {
+  if (!s.messages.length && Array.isArray(history)) {
+    for (const h of history.slice(-12)) {
+      const t = String(h?.text ?? "").trim();
+      if (t) s.messages.push({ role: h.role === "ai" ? "assistant" : "user", content: t });
+    }
+  }
+  s.messages.push({ role: "user", content: text });
+  const state = { actions: [], escalated: false };
+  try {
+    for (let step = 0; step < MAX_STEPS; step++) {
+      const out = await complete({
+        messages: [{ role: "system", content: buildSystemPrompt("chat") }, ...s.messages],
+        tools: [...TOOL_DEFS, fallbackTool],
+      });
+      s.messages.push(out.message);
+      if (!out.calls.length) {
+        return { reply: out.text || "Ji, bataiye main aapki kya madad kar sakti hoon?", ...state, engine: "openai" };
+      }
+      for (const call of out.calls) {
+        s.messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(runTool(call.name, call.args, state)) });
+      }
+    }
+    return { reply: "Ek second, main staff se confirm karke batati hoon.", ...state, escalated: true, engine: "openai" };
+  } catch (err) {
+    console.warn("[agent] OpenAI failed, using rules:", err.message);
+    s.messages = [];
     return { ...rulesReply(text), error: err.message };
   }
 }
