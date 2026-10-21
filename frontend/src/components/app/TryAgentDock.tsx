@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Phone, Send, Sparkles, X } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Loader2, Phone, PhoneCall, Send, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -10,15 +11,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { WaveMark } from "@/components/Logo";
-import { DEMO_PHONE } from "@/lib/mockData";
-import { getAgentReply } from "@/lib/api";
+import { callMeWithAgent, chatWithAgent, getClinic } from "@/lib/api";
+import { USE_LIVE_API } from "@/lib/config";
 import type { AgentMessage } from "@/types";
 import { cn } from "@/lib/utils";
 
-const INITIAL: AgentMessage = {
-  role: "ai",
-  text: "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon. Appointment book karna hai, ya kuch poochna hai?",
-};
+const FALLBACK_GREETING =
+  "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon. Appointment book karna hai, ya kuch poochna hai?";
 
 const SUGGESTIONS = [
   "Mujhe kal appointment chahiye",
@@ -27,12 +26,38 @@ const SUGGESTIONS = [
   "Insurance accept karte ho?",
 ];
 
+const TOOL_LABELS: Record<string, string> = {
+  check_slots: "Checked the calendar",
+  book_appointment: "Test booking (not saved)",
+  find_appointments: "Looked up appointments",
+  reschedule_appointment: "Test reschedule (not saved)",
+  cancel_appointment: "Test cancellation (not saved)",
+  get_clinic_info: "Read clinic info",
+  transfer_to_staff: "Handed to staff",
+};
+
+interface ChatLine extends AgentMessage {
+  actions?: string[];
+}
+
+const newSession = () => `dock-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
 export function TryAgentDock() {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<AgentMessage[]>([INITIAL]);
+  const clinicQ = useQuery({ queryKey: ["clinic"], queryFn: getClinic });
+  const greeting = clinicQ.data?.agent?.greeting || clinicQ.data?.greeting || FALLBACK_GREETING;
+  const agentName = clinicQ.data?.agent?.name || "AawazDoc";
+
+  const [messages, setMessages] = useState<ChatLine[]>([]);
+  const [sessionId, setSessionId] = useState(newSession);
+  const [engine, setEngine] = useState<"gemini" | "rules" | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [callOpen, setCallOpen] = useState(false);
+  const [phone, setPhone] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const thread: ChatLine[] = [{ role: "ai", text: greeting }, ...messages];
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -41,18 +66,39 @@ export function TryAgentDock() {
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    const history = thread;
     setMessages((m) => [...m, { role: "user", text: trimmed }]);
     setInput("");
     setSending(true);
     try {
-      const reply = await getAgentReply(trimmed);
-      setMessages((m) => [...m, { role: "ai", text: reply }]);
-    } catch {
-      toast.error("The demo agent is unavailable right now.");
+      const out = await chatWithAgent(trimmed, sessionId, history);
+      setEngine(out.engine);
+      setMessages((m) => [...m, { role: "ai", text: out.reply, actions: out.actions }]);
+    } catch (err) {
+      toast.error("The agent is unavailable right now.", {
+        description: err instanceof Error ? err.message : undefined,
+      });
     } finally {
       setSending(false);
     }
   };
+
+  const reset = () => {
+    setMessages([]);
+    setSessionId(newSession());
+  };
+
+  const callMe = useMutation({
+    mutationFn: (number: string) => callMeWithAgent(number),
+    onSuccess: () => {
+      toast.success("Calling you now", {
+        description: "Your phone will ring in a few seconds. The call appears in Calls when it ends.",
+      });
+      setCallOpen(false);
+    },
+    onError: (err) =>
+      toast.error("Couldn't place the call", { description: err instanceof Error ? err.message : undefined }),
+  });
 
   return (
     <>
@@ -71,9 +117,11 @@ export function TryAgentDock() {
           <div className="flex items-center gap-3 border-b border-line p-4 pr-12">
             <WaveMark animated />
             <div className="text-left">
-              <DialogTitle className="text-[15px]">Talk to AawazDoc</DialogTitle>
+              <DialogTitle className="text-[15px]">Talk to {agentName}</DialogTitle>
               <DialogDescription className="text-[12px]">
-                A text demo of the receptionist flow
+                {USE_LIVE_API
+                  ? "The same receptionist that answers your phone, in text"
+                  : "A text demo of the receptionist flow"}
               </DialogDescription>
             </div>
           </div>
@@ -84,22 +132,30 @@ export function TryAgentDock() {
             aria-live="polite"
             aria-label="Agent chat"
           >
-            {messages.map((m, i) => (
-              <div
-                key={i}
-                className={cn("flex items-end gap-2", m.role === "ai" ? "justify-start" : "justify-end")}
-              >
-                {m.role === "ai" && <WaveMark className="h-6 w-6 rounded-md" />}
-                <div
-                  className={cn(
-                    "max-w-[80%] rounded-lg px-3.5 py-2.5 text-[13px] leading-relaxed",
-                    m.role === "ai"
-                      ? "rounded-bl-sm border border-line bg-surface text-ink"
-                      : "rounded-br-sm bg-ink text-bg"
-                  )}
-                >
-                  {m.text}
+            {thread.map((m, i) => (
+              <div key={i} className={cn("flex flex-col", m.role === "ai" ? "items-start" : "items-end")}>
+                <div className={cn("flex items-end gap-2", m.role === "ai" ? "justify-start" : "justify-end")}>
+                  {m.role === "ai" && <WaveMark className="h-6 w-6 rounded-md" />}
+                  <div
+                    className={cn(
+                      "max-w-[80%] whitespace-pre-line rounded-lg px-3.5 py-2.5 text-[13px] leading-relaxed",
+                      m.role === "ai"
+                        ? "rounded-bl-sm border border-line bg-surface text-ink"
+                        : "rounded-br-sm bg-ink text-bg"
+                    )}
+                  >
+                    {m.text}
+                  </div>
                 </div>
+                {!!m.actions?.length && (
+                  <div className="ml-8 mt-1.5 flex flex-wrap gap-1">
+                    {[...new Set(m.actions)].map((a) => (
+                      <span key={a} className="rounded-full bg-surface px-2 py-0.5 font-mono text-[10px] text-ink3">
+                        {TOOL_LABELS[a] ?? a}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
 
@@ -118,7 +174,7 @@ export function TryAgentDock() {
               </div>
             )}
 
-            {messages.length <= 1 && (
+            {messages.length === 0 && (
               <div className="flex flex-wrap gap-2 pt-1">
                 {SUGGESTIONS.map((s) => (
                   <button
@@ -134,29 +190,64 @@ export function TryAgentDock() {
           </div>
 
           <div className="border-t border-line p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-[12px]"
-                onClick={() =>
-                  toast.info("Live agent calling is not wired up in this demo.", {
-                    description: `The demo line is ${DEMO_PHONE}.`,
-                  })
-                }
+            {callOpen ? (
+              <form
+                className="mb-2 flex items-center gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (phone.replace(/\D/g, "").length >= 10) callMe.mutate(phone);
+                }}
               >
-                <Phone className="h-3.5 w-3.5" />
-                Call the live agent
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 text-[12px] text-ink3"
-                onClick={() => setMessages([INITIAL])}
-              >
-                <X className="h-3.5 w-3.5" /> Reset
-              </Button>
-            </div>
+                <label htmlFor="call-me-phone" className="sr-only">
+                  Your mobile number
+                </label>
+                <Input
+                  id="call-me-phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="Your mobile, e.g. 98110 22334"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="h-8 text-[13px]"
+                  autoFocus
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="ink"
+                  className="h-8 shrink-0 text-[12px]"
+                  disabled={callMe.isPending || phone.replace(/\D/g, "").length < 10}
+                >
+                  {callMe.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PhoneCall className="h-3.5 w-3.5" />}
+                  Call me
+                </Button>
+                <Button type="button" size="icon-sm" variant="ghost" onClick={() => setCallOpen(false)} aria-label="Cancel">
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </form>
+            ) : (
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-[12px]"
+                  onClick={() =>
+                    USE_LIVE_API
+                      ? setCallOpen(true)
+                      : toast.info("Connect the backend to hear the real agent.", {
+                          description: "Set VITE_API_BASE_URL and BOLNA_API_KEY.",
+                        })
+                  }
+                >
+                  <Phone className="h-3.5 w-3.5" />
+                  Call the live agent
+                </Button>
+                <Button variant="ghost" size="sm" className="h-8 text-[12px] text-ink3" onClick={reset}>
+                  <X className="h-3.5 w-3.5" /> Reset
+                </Button>
+              </div>
+            )}
             <form
               className="flex items-center gap-2"
               onSubmit={(e) => {
@@ -179,7 +270,11 @@ export function TryAgentDock() {
               </Button>
             </form>
             <p className="mt-2 text-[11px] text-ink3">
-              Visual demo only. Replies are canned and it never gives medical advice.
+              {!USE_LIVE_API
+                ? "Visual demo only. Replies are canned and it never gives medical advice."
+                : engine === "rules"
+                  ? "Rule-based replies. Add GEMINI_API_KEY on the server for the full agent. Test bookings are never saved."
+                  : "Same prompt and tools as the phone line. Test bookings are never saved."}
             </p>
           </div>
         </DialogContent>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BadgeCheck,
@@ -24,7 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/StateViews";
 import { WaveMark } from "@/components/Logo";
 import { TransportBar, Waveform, usePlayback } from "@/components/voice/player";
-import { getCall, markCallFollowedUp, markCallResolved } from "@/lib/api";
+import { getCall, getRecording, markCallFollowedUp, markCallResolved } from "@/lib/api";
 import { mockWaveform } from "@/lib/mockData";
 import { fullDateTime } from "@/lib/datetime";
 import { LANGUAGE_META, OUTCOME_META } from "@/lib/outcome";
@@ -48,8 +48,27 @@ export function CallDrawer({
     enabled: open && !!callId,
   });
 
-  const duration = call?.durationSec ?? 0;
-  const { playing, t, seek, reset, toggle } = usePlayback(duration);
+  const recordingQ = useQuery({
+    queryKey: ["recording", call?.id],
+    queryFn: () => getRecording(call!.recordingUrl),
+    enabled: open && !!call?.recordingUrl,
+    staleTime: Infinity,
+    retry: 1,
+  });
+  // The object URL belongs to this component, not the query cache, so it is
+  // created and revoked together (also under React's double-mount in dev).
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!recordingQ.data) {
+      setAudioSrc(null);
+      return;
+    }
+    const url = URL.createObjectURL(recordingQ.data);
+    setAudioSrc(url);
+    return () => URL.revokeObjectURL(url);
+  }, [recordingQ.data]);
+
+  const { playing, t, duration, hasAudio, seek, reset, toggle } = usePlayback(call?.durationSec ?? 0, audioSrc);
 
   useEffect(() => {
     reset();
@@ -161,12 +180,19 @@ export function CallDrawer({
                     onReset={reset}
                   />
                   <span className="tnum font-mono text-[11px] text-ink3">
-                    {formatDuration(duration)}
+                    {formatDuration(Math.round(duration))}
                   </span>
                 </div>
                 <p className="mt-3 text-[11px] leading-relaxed text-ink3">
-                  Tap the waveform or any line to jump. Placeholder audio: the real recording comes
-                  from the voice agent.
+                  {hasAudio
+                    ? "Tap the waveform or any line to jump. Recorded by the phone agent."
+                    : recordingQ.isLoading
+                      ? "Loading the recording…"
+                      : recordingQ.isError
+                        ? "The recording couldn't be loaded. The transcript is below."
+                        : call.recordingUrl
+                          ? "Tap the waveform or any line to jump."
+                          : "No recording for this call. Step through the transcript with the player."}
                 </p>
               </section>
 

@@ -4,9 +4,11 @@ An AI phone receptionist for small clinics. A patient calls, the AI answers in *
 Hinglish**, books the appointment, and sends a WhatsApp confirmation. The clinic sees every call,
 booking and transcript on a dashboard.
 
-This repo is the **frontend dashboard** plus a **working reference backend**. The voice agent is
-built in Bolna. Everything is wired so the three pieces can be developed in parallel and joined with
-one environment variable.
+This repo is the **dashboard** and the **backend** that runs the real thing: the phone agent on Bolna
+(Sarvam speech-to-text and voice, Gemini as the brain) calls this API mid-call to check slots and book,
+the API keeps everything in a Google Sheet, sends WhatsApp confirmations, and the dashboard shows every
+call, transcript and recording. **[docs/GO-LIVE.md](docs/GO-LIVE.md)** takes you from a clone to a real
+phone number.
 
 > **A note on the name.** The plan and this repo are called **ClinicVaani**. The UI currently ships
 > with the working brand **AawazDoc**, which is what the mock data and the landing page say. See
@@ -32,14 +34,21 @@ cp .env.example .env.local      # sets VITE_API_BASE_URL=http://localhost:8787
 npm run dev
 ```
 
+The API reads `server/.env` (copy `server/.env.example`). Each integration (Google Sheets, Bolna,
+WhatsApp, Gemini, the dashboard login) switches on when its keys are set; Settings > Integrations shows
+what is live.
+
 That is the whole switch. With `VITE_API_BASE_URL` unset the dashboard reads mock data. With it set,
 every function in `src/lib/api.ts` goes over the network. No component changes either way.
 
 | Script | What it does |
 | --- | --- |
 | `npm run dev` | Dashboard dev server |
-| `npm run dev:api` | Reference backend on port 8787 |
-| `npm run test:api` | 39 assertions over the API contract |
+| `npm run dev:api` | The API on port 8787 |
+| `npm test` | 111 checks: the API contract, Bolna tools and webhook, auth, and the Sheets store |
+| `npm run test:api` | The API checks only (90) |
+| `npm run test:sheets` | The Google Sheets store against a fake Sheets API (21) |
+| `npm run bolna:sync` | Create or update the Bolna phone agent from the clinic's data |
 | `npm run build` | Type-check and build the dashboard |
 | `npm run build:preview` | One standalone HTML file, for sharing a demo |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -81,11 +90,12 @@ Read these in order. Each one is written for a different person on the team.
 
 | Document | For | What is in it |
 | --- | --- | --- |
+| [docs/GO-LIVE.md](docs/GO-LIVE.md) | Everyone | Keys, deploy, the Bolna agent, the phone number, WhatsApp, the pre-launch checklist |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Everyone | The diagram, the call sequence, the Sheet tabs, the build order, the plan and the risks |
 | [docs/API-CONTRACT.md](docs/API-CONTRACT.md) | Backend, frontend | Every endpoint, request and response bodies, error codes, the Sheets column mapping |
 | [docs/VOICE-AGENT.md](docs/VOICE-AGENT.md) | Voice AI | The Bolna tool definitions, the prompt skeleton, the post-call webhook, the latency budget, the edge cases |
 | [docs/BACKEND.md](docs/BACKEND.md) | Backend | How to build it: Sheets, the double-booking guard, WhatsApp with an SMS fallback, hosting, CORS |
-| [server/README.md](server/README.md) | Backend | The reference server, and how to point the dashboard at it |
+| [server/README.md](server/README.md) | Backend | The server's modules, and how to point the dashboard at it |
 
 ---
 
@@ -102,7 +112,7 @@ Read these in order. Each one is written for a different person on the team.
 | `/app/settings` | Clinic, doctors, FAQs, escalation, plan and usage |
 
 Global: a command palette (**Cmd or Ctrl + K**), an AI live/paused switch, and a light/dark toggle.
-There is no authentication yet.
+With `ADMIN_PASSWORD` set on the API, the dashboard asks for a password.
 
 The five pages in the original plan (Landing, Overview, Calls, Appointments, Settings) are all here.
 **Agent** and **Outbound** are additions: the first is the loop that makes the AI measurably better,
@@ -212,11 +222,19 @@ If the team wants **ClinicVaani** everywhere instead of **AawazDoc**, these are 
 
 ---
 
-## Not included
+## What is real, and what is not yet
 
-- No authentication.
-- No real telephony, WhatsApp sending or audio files. The "Call the live agent" button, the recording
-  player and the billing screen are labelled placeholders.
-- The reference backend stores everything in memory. See
-  [docs/BACKEND.md](docs/BACKEND.md) for the Google Sheets path and the concurrency caveat.
-- AawazDoc never gives medical advice. Emergencies are directed to emergency services or a human.
+Real, against the backend: bookings from the phone agent with the double-booking guard, the call log
+with transcripts and recordings, live calls, every Overview number and trend, agent accuracy, the
+go-live checklist, Google Sheets storage, WhatsApp/SMS confirmations and daily reminders, the chat agent
+and test console, "Call me" test calls, and the login.
+
+Not yet:
+
+- Outbound **voice** campaigns (waitlist backfill, recalls) are stored and shown but not dialled; only
+  the WhatsApp reminder campaign runs.
+- "Take over" on a live call flags the caller for a staff call-back; Bolna cannot hand a live call to
+  the browser.
+- The plan, minutes and billing screen reads usage from real call durations, but there is no payment.
+- One API instance only: the double-booking guard is in its memory, and Sheets has no transactions.
+- AawazDoc never gives medical advice. Emergencies are directed to 108 and a human.

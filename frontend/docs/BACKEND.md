@@ -10,14 +10,15 @@ build it.
 
 ## 1. Quick start
 
-A working reference implementation ships in `server/`. It has no dependencies and implements the
-whole contract, so you can run the frontend and the agent against it today.
+The backend ships in `server/`. It has no dependencies, implements the whole contract, and stores
+data in Google Sheets when `SHEET_ID` and a service account are set (a JSON file otherwise). The step
+by step to production is [GO-LIVE.md](GO-LIVE.md).
 
 ```bash
 node server/index.mjs            # http://localhost:8787
 curl http://localhost:8787/health
 
-npm run test:api                 # 34 assertions over the whole contract
+npm test                         # 111 checks, including the Sheets store
 ```
 
 Then point the dashboard at it:
@@ -28,14 +29,8 @@ VITE_API_BASE_URL=http://localhost:8787
 npm run dev
 ```
 
-Storage is in memory and resets on restart. Every place that must become a Sheets call is marked
-with `TODO(sheets):`:
-
-```bash
-grep -rn "TODO(sheets)" server/index.mjs
-```
-
-That is your work list.
+Storage is `server/store/sheets.mjs` (Google Sheets), `file.mjs` (a JSON file) or `memory.mjs`
+(tests). Routes only touch the in-memory copy in `state.mjs`; the store persists it.
 
 ---
 
@@ -53,7 +48,7 @@ check the slot and write the row as one operation
 ```
 
 If you read, then check, then write as three steps, two requests can both pass the check. In the
-reference server this is a single synchronous function, so it is safe. Against Sheets, it is not
+server the check and write happen in memory in one synchronous step, and Sheets is written after. Against Sheets alone, it is not
 safe by default:
 
 - Sheets has no transactions, and two concurrent writers can both append a row.
@@ -175,7 +170,7 @@ Bolna cannot reach `localhost`, so the API needs a public HTTPS URL.
 | Demo | Render or Railway free tier. Both give HTTPS and a stable URL |
 | Production | The same, or any Node host. Add a real database and the CORS allowlist |
 
-Environment variables the reference server reads:
+The full list of environment variables is in `server/.env.example`. The basics:
 
 ```bash
 PORT=8787

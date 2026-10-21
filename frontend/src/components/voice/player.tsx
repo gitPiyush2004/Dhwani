@@ -1,22 +1,54 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, clockTime } from "@/lib/utils";
 
 /**
- * Simulated playback clock. The real product drives this from the <audio>
- * element's timeupdate event; everything else about the UI stays the same.
+ * Playback clock for the call drawer. With `src` it drives a real <audio>
+ * element and follows its timeupdate events; without one it simulates the
+ * clock over `durationSec`, so the transcript can still be stepped through.
  */
-export function usePlayback(durationSec: number) {
+export function usePlayback(durationSec: number, src?: string | null) {
   const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
+  const [audioDuration, setAudioDuration] = useState<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    if (!playing) return;
+    setAudioDuration(null);
+    if (!src) {
+      audioRef.current = null;
+      return;
+    }
+    const audio = new Audio(src);
+    audio.preload = "metadata";
+    audioRef.current = audio;
+    audio.ontimeupdate = () => setT(audio.currentTime);
+    audio.onloadedmetadata = () => {
+      if (Number.isFinite(audio.duration)) setAudioDuration(audio.duration);
+    };
+    audio.onplay = () => setPlaying(true);
+    audio.onpause = () => setPlaying(false);
+    audio.onended = () => {
+      setPlaying(false);
+      setT(0);
+    };
+    return () => {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      audioRef.current = null;
+    };
+  }, [src]);
+
+  const duration = audioDuration ?? durationSec;
+
+  useEffect(() => {
+    if (!playing || audioRef.current) return;
     const id = setInterval(() => {
       setT((prev) => {
         const next = prev + 0.1;
-        if (next >= durationSec) {
+        if (next >= duration) {
           setPlaying(false);
           return 0;
         }
@@ -24,19 +56,32 @@ export function usePlayback(durationSec: number) {
       });
     }, 100);
     return () => clearInterval(id);
-  }, [playing, durationSec]);
+  }, [playing, duration]);
 
-  const seek = (sec: number) => setT(Math.max(0, Math.min(durationSec, sec)));
+  const seek = (sec: number) => {
+    const next = Math.max(0, Math.min(duration, sec));
+    if (audioRef.current) audioRef.current.currentTime = next;
+    setT(next);
+  };
 
   return {
     playing,
     t,
+    duration,
+    hasAudio: Boolean(src),
     seek,
     reset: () => {
+      audioRef.current?.pause();
+      if (audioRef.current) audioRef.current.currentTime = 0;
       setT(0);
       setPlaying(false);
     },
-    toggle: () => setPlaying((p) => !p),
+    toggle: () => {
+      const audio = audioRef.current;
+      if (!audio) return setPlaying((p) => !p);
+      if (audio.paused) void audio.play().catch(() => setPlaying(false));
+      else audio.pause();
+    },
   };
 }
 
@@ -132,7 +177,7 @@ export function TransportBar({
         </Button>
       </div>
       <span className="tnum font-mono text-[12px] text-ink3">
-        {clockTime(t)} / {clockTime(duration)}
+        {clockTime(t)} / {clockTime(Math.round(duration))}
       </span>
     </div>
   );

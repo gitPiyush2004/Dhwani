@@ -11,6 +11,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { LiveDot } from "@/components/voice/LiveCallCard";
 import { getClinic, getDashboardStats, getLiveCalls } from "@/lib/api";
 import { ALL_NAV } from "@/lib/nav";
+import { USE_LIVE_API } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
 function UserMenu() {
@@ -81,7 +82,7 @@ export function StatusStrip({ onOpenCommand }: { onOpenCommand: () => void }) {
   const { pathname } = useLocation();
   const [aiLive, setAiLive] = useState(true);
   const { data: stats } = useQuery({ queryKey: ["dashboard-stats"], queryFn: getDashboardStats });
-  const { data: live } = useQuery({ queryKey: ["live-calls"], queryFn: getLiveCalls });
+  const { data: live } = useQuery({ queryKey: ["live-calls"], queryFn: getLiveCalls, refetchInterval: USE_LIVE_API ? 5_000 : false });
 
   const current = ALL_NAV.find((n) => (n.end ? pathname === n.to : pathname.startsWith(n.to)));
   const liveCount = live?.length ?? 0;
