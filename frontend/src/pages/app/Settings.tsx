@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/StateViews";
 import { DoctorDialog } from "@/components/settings/DoctorDialog";
+import { IntegrationsPanel } from "@/components/settings/IntegrationsPanel";
 import { WaveMark } from "@/components/Logo";
 import { deleteDoctor, getClinic, getDoctors, getUsage, updateClinic } from "@/lib/api";
 import type { Clinic, Doctor, Language } from "@/types";
@@ -144,6 +145,7 @@ export default function Settings() {
           <TabsTrigger value="faqs">FAQs</TabsTrigger>
           <TabsTrigger value="escalation">Escalation</TabsTrigger>
           <TabsTrigger value="billing">Plan and usage</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
         </TabsList>
 
         {/* Clinic */}
@@ -562,6 +564,9 @@ export default function Settings() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+        <TabsContent value="integrations">
+          <IntegrationsPanel />
         </TabsContent>
       </Tabs>
 

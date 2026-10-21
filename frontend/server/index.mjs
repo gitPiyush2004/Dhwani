@@ -1,37 +1,76 @@
 // ---------------------------------------------------------------------------
-// AawazDoc / ClinicVaani reference backend
+// Dhwani API
 //
-// A zero-dependency Node server that implements the API contract in
-// docs/API-CONTRACT.md. It exists so the frontend and the Bolna voice agent can
-// be pointed at something real on day 1, before Google Sheets is wired up.
+// The one service that both the phone agent (Bolna) and the dashboard call.
+// It owns the data and is the only writer, so the two always agree.
 //
 //   node server/index.mjs              # http://localhost:8787
-//   PORT=9000 node server/index.mjs
 //
-// Then, in the frontend, set VITE_API_BASE_URL=http://localhost:8787 and every
-// screen runs on live data.
+// Configuration is in server/.env (see server/.env.example). Each integration
+// switches on when its variables are present:
+//   storage    Google Sheets (SHEET_ID + service account), else a JSON file
+//   phone      Bolna, with Sarvam speech and Gemini (BOLNA_API_KEY)
+//   messages   WhatsApp / SMS (META_WA_* or TWILIO_*)
+//   chat agent Gemini (GEMINI_API_KEY), else rule-based answers
+//   login      ADMIN_PASSWORD
 //
-// Storage is in memory, seeded from ./data.mjs. Every place that must become a
-// Google Sheets call is marked with  TODO(sheets):  so the backend team can
-// find them with a search.
+// Zero dependencies. The contract is docs/API-CONTRACT.md; the tests are
+// server/test.mjs.
 // ---------------------------------------------------------------------------
 
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
-import { seed, makeId } from "./data.mjs";
-
-const PORT = Number(process.env.PORT ?? 8787);
-const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS ?? "*")
-  .split(",")
-  .map((s) => s.trim());
-
-/* ------------------------------------------------------------------ */
-/* Store                                                              */
-/* ------------------------------------------------------------------ */
-
-// TODO(sheets): replace this object with reads/writes against the Sheet tabs
-// Appointments, Calls, Doctors, FAQs and Clinic.
-const db = seed();
+import { chat } from "./agent/brain.mjs";
+import { TOOLS } from "./agent/tools.mjs";
+import {
+  agentMetrics,
+  callOutcomes,
+  callsPerDay,
+  dashboardStats,
+  onboarding,
+  usage,
+} from "./analytics.mjs";
+import { authRequired, isAdmin, isBolna, login } from "./auth.mjs";
+import { buildAgentPayload } from "./bolna/agent-config.mjs";
+import {
+  agentId,
+  fetchRecording,
+  getMe,
+  lastSyncStatus,
+  linkInboundNumber,
+  scheduleAgentSync,
+  startCall,
+  syncAgent,
+} from "./bolna/client.mjs";
+import {
+  callFromGenericWebhook,
+  currentLiveCalls,
+  handleBolnaWebhook,
+  isBolnaPayload,
+  removeLiveCall,
+  saveCall,
+} from "./calls.mjs";
+import { config, integrations } from "./config.mjs";
+import { makeId } from "./data.mjs";
+import {
+  createAppointment,
+  events,
+  findDoctor,
+  freeSlots,
+  knowledgeChanged,
+  persistRow,
+  persistTable,
+  recordConfirmation,
+  samePhone,
+  slotTaken,
+  updateAppointment,
+  useStore,
+} from "./domain.mjs";
+import { messagingStatus, notifyPatient } from "./messaging.mjs";
+import { runReminders, startReminderSchedule } from "./reminders.mjs";
+import { db } from "./state.mjs";
+import { createStore } from "./store/index.mjs";
+import { clinicDate, resolveDate } from "./time.mjs";
+import { geminiModel } from "./agent/gemini.mjs";
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
@@ -54,59 +93,30 @@ const noContent = (res) => {
 
 const fail = (res, status, error, extra = {}) => json(res, status, { error, ...extra });
 
+const MAX_BODY = 2 * 1024 * 1024;
+
 async function readBody(req) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_BODY) return null;
+    chunks.push(chunk);
+  }
   if (!chunks.length) return {};
   try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return null;
   }
 }
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
-
-/** Minutes-from-midnight for "HH:mm". */
-const toMinutes = (hhmm) => {
-  const [h, m] = String(hhmm).split(":").map(Number);
-  return h * 60 + m;
-};
-
-/**
- * The double-booking guard. A slot is taken when the same doctor already has a
- * live appointment at that exact instant. Everything that writes an appointment
- * must go through this.
- */
-function slotTaken(doctorId, startsAt, ignoreId) {
-  const t = new Date(startsAt).getTime();
-  return db.appointments.some(
-    (a) =>
-      a.id !== ignoreId &&
-      a.doctorId === doctorId &&
-      a.status !== "cancelled" &&
-      new Date(a.startsAt).getTime() === t
-  );
-}
-
-/** Free "HH:mm" slots for a doctor on a calendar day, honouring their hours. */
-function freeSlots(doctorId, date) {
-  const doctor = db.doctors.find((d) => d.id === doctorId);
-  if (!doctor) return null;
-  const weekday = new Date(`${date}T00:00:00`).getDay();
-  const out = [];
-  for (const block of doctor.availability.filter((b) => b.day === weekday)) {
-    const end = toMinutes(block.end);
-    let t = toMinutes(block.start);
-    while (t + doctor.slotDurationMin <= end) {
-      const hh = String(Math.floor(t / 60)).padStart(2, "0");
-      const mm = String(t % 60).padStart(2, "0");
-      const iso = new Date(`${date}T${hh}:${mm}:00`).toISOString();
-      if (!slotTaken(doctorId, iso)) out.push(`${hh}:${mm}`);
-      t += doctor.slotDurationMin;
-    }
-  }
-  return out;
+/** What the dashboard sees of a call: internal fields out, recordings proxied. */
+function publicCall(c) {
+  const { sourceRecordingUrl, ...rest } = c;
+  const src = sourceRecordingUrl ?? c.recordingUrl ?? "";
+  return { ...rest, recordingUrl: /^https?:\/\//.test(src) ? `/api/calls/${c.id}/recording` : "" };
 }
 
 /* ------------------------------------------------------------------ */
@@ -114,92 +124,139 @@ function freeSlots(doctorId, date) {
 /* ------------------------------------------------------------------ */
 
 const routes = [];
-const route = (method, pattern, handler) => routes.push({ method, pattern, handler });
+/** access: "public" | "admin" | "bolna" | "admin-or-bolna" */
+const route = (method, pattern, access, handler) => routes.push({ method, pattern, access, handler });
 
-/* --- health -------------------------------------------------------- */
+/* --- health, auth, public config ------------------------------------ */
 
-route("GET", /^\/health$/, (_req, res) =>
-  json(res, 200, { ok: true, service: "clinicvaani-api", time: new Date().toISOString() })
+route("GET", /^\/health$/, "public", (_req, res) =>
+  json(res, 200, { ok: true, service: "dhwani-api", time: new Date().toISOString() })
 );
+
+route("GET", /^\/api\/auth\/status$/, "public", (req, res) =>
+  json(res, 200, { required: authRequired(), authenticated: isAdmin(req) })
+);
+
+route("POST", /^\/api\/auth\/login$/, "public", async (req, res) => {
+  const body = await readBody(req);
+  if (body === null) return fail(res, 400, "Body must be valid JSON");
+  // A small fixed delay makes password guessing slow.
+  await new Promise((r) => setTimeout(r, 400));
+  const session = login(body.password);
+  if (!session) return fail(res, 401, "That password is not right.");
+  json(res, 200, session);
+});
+
+/** What the public landing page may show: the real number to call. */
+route("GET", /^\/api\/public\/config$/, "public", (_req, res) =>
+  json(res, 200, {
+    clinicName: db.clinic?.name ?? "",
+    agentName: db.clinic?.agent?.name ?? "",
+    demoPhone: config.bolna.phoneNumber || null,
+    voiceEnabled: Boolean(integrations.bolna() && agentId()),
+  })
+);
+
+/* --- integrations ------------------------------------------------------ */
+
+route("GET", /^\/api\/integrations$/, "admin", async (_req, res, _m, ctx) => {
+  let wallet = null;
+  if (integrations.bolna()) {
+    try {
+      const me = await getMe();
+      wallet = me.wallet ?? me.balance ?? null;
+    } catch {
+      wallet = null;
+    }
+  }
+  json(res, 200, {
+    storage: ctx.store.status(),
+    bolna: {
+      configured: integrations.bolna(),
+      agentId: agentId() || null,
+      phoneNumber: config.bolna.phoneNumber || null,
+      publicUrl: config.publicUrl || null,
+      secretSet: Boolean(config.bolna.secret),
+      llm: `${config.bolna.llmProvider}/${config.bolna.llmModel}`,
+      voice: `sarvam ${config.bolna.ttsModel} ${config.bolna.ttsVoice}`,
+      transcriber: `sarvam ${config.bolna.sttModel}`,
+      lastSync: lastSyncStatus(),
+      wallet,
+    },
+    messaging: messagingStatus(),
+    gemini: { configured: integrations.gemini(), model: integrations.gemini() ? geminiModel() : null },
+    auth: { required: authRequired() },
+  });
+});
+
+route("POST", /^\/api\/integrations\/bolna\/sync$/, "admin", async (_req, res) => {
+  try {
+    json(res, 200, await syncAgent());
+  } catch (err) {
+    fail(res, 502, err.message);
+  }
+});
+
+route("POST", /^\/api\/integrations\/bolna\/link-number$/, "admin", async (req, res) => {
+  const body = await readBody(req);
+  try {
+    json(res, 200, await linkInboundNumber(body?.phone || config.bolna.phoneNumber));
+  } catch (err) {
+    fail(res, 502, err.message);
+  }
+});
+
+route("GET", /^\/api\/integrations\/bolna\/agent-config$/, "admin", (_req, res) => {
+  const payload = JSON.parse(JSON.stringify(buildAgentPayload()).replaceAll(config.bolna.secret || "\u0000", "<BOLNA_SECRET>"));
+  json(res, 200, payload);
+});
+
+route("POST", /^\/api\/integrations\/sheets\/refresh$/, "admin", async (_req, res, _m, ctx) => {
+  if (!ctx.store.refresh) return fail(res, 400, "Google Sheets is not the storage backend");
+  await ctx.store.refresh();
+  json(res, 200, ctx.store.status());
+});
+
+route("POST", /^\/api\/reminders\/run$/, "admin", async (_req, res) => json(res, 200, await runReminders({ force: true })));
 
 /* --- live calls ---------------------------------------------------- */
 
-route("GET", /^\/api\/live-calls$/, (_req, res) => json(res, 200, db.liveCalls));
+route("GET", /^\/api\/live-calls$/, "admin", (_req, res) => json(res, 200, currentLiveCalls()));
 
-route("POST", /^\/api\/live-calls\/([^/]+)\/takeover$/, (req, res, [id]) => {
-  db.liveCalls = db.liveCalls.filter((c) => c.id !== id);
+/**
+ * Bolna cannot hand a live call to a browser, so "take over" flags the caller
+ * for an immediate staff call-back and removes the card.
+ */
+route("POST", /^\/api\/live-calls\/([^/]+)\/takeover$/, "admin", (_req, res, [id]) => {
+  const live = db.liveCalls.find((c) => c.id === id);
+  removeLiveCall(id);
+  if (live) {
+    const call = db.calls.find((c) => c.executionId === id);
+    if (call) {
+      call.needsFollowUp = true;
+      persistRow("calls", call);
+    } else {
+      db.meta.takeovers = { ...(db.meta.takeovers ?? {}), [id]: new Date().toISOString() };
+    }
+  }
   json(res, 200, { ok: true });
 });
 
 /* --- dashboard ----------------------------------------------------- */
 
-route("GET", /^\/api\/dashboard\/stats$/, (_req, res) => {
-  const today = todayISO();
-  const isToday = (iso) => iso.slice(0, 10) === today;
-  const callsToday = db.calls.filter((c) => isToday(c.startedAt));
-  const booked = db.appointments.filter((a) => isToday(a.startsAt) && a.status !== "cancelled");
-  const answered = db.calls.filter((c) => c.durationSec > 0);
-  const avg = answered.reduce((s, c) => s + c.durationSec, 0) / Math.max(answered.length, 1);
-  json(res, 200, {
-    callsToday: callsToday.length,
-    appointmentsBooked: booked.length,
-    missedRecovered: db.calls.filter((c) => c.outcome === "missed" || c.outcome === "dropped").length,
-    avgDurationSec: Math.round(avg),
-    revenueRecovered: db.calls.filter((c) => c.outcome === "booked").length * 560 + 18400,
-    bookedWhileClosed: 9,
-    trends: {
-      callsToday: 12,
-      appointmentsBooked: 8,
-      missedRecovered: 25,
-      avgDurationSec: -4,
-      revenueRecovered: 17,
-    },
-  });
+route("GET", /^\/api\/dashboard\/stats$/, "admin", (_req, res) => json(res, 200, dashboardStats()));
+
+route("GET", /^\/api\/dashboard\/calls-per-day$/, "admin", (_req, res, _m, { url }) => {
+  const days = Math.min(Math.max(Number(url.searchParams.get("days") ?? 7) || 7, 1), 90);
+  json(res, 200, callsPerDay(days));
 });
 
-route("GET", /^\/api\/dashboard\/calls-per-day$/, (req, res) => {
-  const days = Number(new URL(req.url, "http://x").searchParams.get("days") ?? 7);
-  const out = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
-    const dayCalls = db.calls.filter((c) => c.startedAt.slice(0, 10) === key);
-    out.push({
-      date: new Date(`${key}T00:00:00`).toISOString(),
-      label: d.toLocaleDateString("en-IN", { weekday: "short" }),
-      answered: dayCalls.filter((c) => c.durationSec > 0).length,
-      neededHuman: dayCalls.filter((c) => c.outcome === "human").length,
-    });
-  }
-  json(res, 200, out);
-});
-
-route("GET", /^\/api\/dashboard\/call-outcomes$/, (_req, res) => {
-  const labels = {
-    booked: "Booked",
-    faq: "FAQ answered",
-    human: "Handed to human",
-    dropped: "Dropped",
-    missed: "Missed",
-    rescheduled: "Rescheduled",
-    cancelled: "Cancelled",
-  };
-  const counts = {};
-  for (const c of db.calls) counts[c.outcome] = (counts[c.outcome] ?? 0) + 1;
-  json(
-    res,
-    200,
-    Object.keys(counts)
-      .map((key) => ({ key, label: labels[key] ?? key, value: counts[key] }))
-      .sort((a, b) => b.value - a.value)
-  );
-});
+route("GET", /^\/api\/dashboard\/call-outcomes$/, "admin", (_req, res) => json(res, 200, callOutcomes()));
 
 /* --- calls --------------------------------------------------------- */
 
-route("GET", /^\/api\/calls$/, (req, res) => {
-  const p = new URL(req.url, "http://x").searchParams;
+route("GET", /^\/api\/calls$/, "admin", (_req, res, _m, { url }) => {
+  const p = url.searchParams;
   const search = (p.get("search") ?? "").toLowerCase();
   const outcome = p.get("outcome");
   const language = p.get("language");
@@ -221,87 +278,112 @@ route("GET", /^\/api\/calls$/, (req, res) => {
       }
       return true;
     })
-    .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+    .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt))
+    .map(publicCall);
 
   json(res, 200, out);
 });
 
-route("GET", /^\/api\/calls\/([^/]+)$/, (_req, res, [id]) => {
+route("GET", /^\/api\/calls\/([^/]+)\/recording$/, "admin", async (_req, res, [id]) => {
   const call = db.calls.find((c) => c.id === id);
-  if (!call) return fail(res, 404, `Call ${id} not found`);
-  json(res, 200, call);
+  const src = call?.sourceRecordingUrl ?? call?.recordingUrl;
+  if (!call || !/^https?:\/\//.test(src ?? "")) return fail(res, 404, "No recording for this call");
+  try {
+    const upstream = await fetchRecording(src);
+    if (!upstream.ok) return fail(res, 502, `The recording could not be fetched (${upstream.status})`);
+    res.writeHead(200, {
+      "Content-Type": upstream.headers.get("content-type") ?? "audio/mpeg",
+      "Cache-Control": "private, max-age=3600",
+      ...(upstream.headers.get("content-length") ? { "Content-Length": upstream.headers.get("content-length") } : {}),
+    });
+    for await (const chunk of upstream.body) res.write(chunk);
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) fail(res, 502, `The recording could not be fetched: ${err.message}`);
+    else res.end();
+  }
 });
 
-route("PATCH", /^\/api\/calls\/([^/]+)$/, async (req, res, [id]) => {
+route("GET", /^\/api\/calls\/([^/]+)$/, "admin", (_req, res, [id]) => {
+  const call = db.calls.find((c) => c.id === id);
+  if (!call) return fail(res, 404, `Call ${id} not found`);
+  json(res, 200, publicCall(call));
+});
+
+route("PATCH", /^\/api\/calls\/([^/]+)$/, "admin", async (req, res, [id]) => {
   const call = db.calls.find((c) => c.id === id);
   if (!call) return fail(res, 404, `Call ${id} not found`);
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
-  Object.assign(call, body);
-  // TODO(sheets): write the follow-up flag back to the Calls tab.
-  json(res, 200, call);
+  for (const k of ["needsFollowUp", "resolved", "outcome", "intent", "summary", "callerName", "tags"]) {
+    if (body[k] !== undefined) call[k] = body[k];
+  }
+  if (body.resolved === true) call.needsFollowUp = false;
+  persistRow("calls", call);
+  json(res, 200, publicCall(call));
 });
 
-/* --- the Bolna post-call webhook ----------------------------------- */
+/* --- post-call webhooks -------------------------------------------- */
 
 /**
- * POST /api/calls/webhook
- * Bolna calls this after every call ends. It is what fills the Calls table, so
- * the dashboard, the review queue and the agent metrics all depend on it.
- * See docs/VOICE-AGENT.md for the exact payload.
+ * POST /api/calls/webhook: our documented payload (docs/VOICE-AGENT.md), or
+ * Bolna's native execution payload, which is detected and handled below.
  */
-route("POST", /^\/api\/calls\/webhook$/, async (req, res) => {
+route("POST", /^\/api\/calls\/webhook$/, "admin-or-bolna", async (req, res) => {
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
-
-  const transcript = Array.isArray(body.transcript)
-    ? body.transcript.map((line, i) => ({
-        speaker: line.speaker === "ai" || line.role === "agent" ? "ai" : "patient",
-        text: String(line.text ?? ""),
-        ts: line.ts ?? new Date().toISOString(),
-        startSec: line.startSec ?? i * 6,
-      }))
-    : [];
-
-  const call = {
-    id: body.id ?? makeId("call"),
-    callerName: body.callerName ?? body.caller_name ?? "Unknown caller",
-    phone: body.phone ?? "",
-    startedAt: body.startedAt ?? new Date().toISOString(),
-    durationSec: Number(body.durationSec ?? 0),
-    language: body.language ?? "Hinglish",
-    outcome: body.outcome ?? "faq",
-    sentiment: body.sentiment ?? "neutral",
-    summary: body.summary ?? "",
-    transcript,
-    extracted: body.extracted ?? {},
-    needsFollowUp: Boolean(body.needsFollowUp ?? false),
-    recordingUrl: body.recordingUrl ?? "",
-    intent: body.intent ?? "Clinic question",
-    resolved: Boolean(body.resolved ?? true),
-    confidence: Number(body.confidence ?? 0.9),
-    tags: body.tags ?? [],
-    aiActions: body.aiActions ?? [],
-  };
-
-  db.calls.unshift(call);
-  // TODO(sheets): append a row to the Calls tab, and write any appointment the
-  // agent booked during the call.
-  json(res, 201, call);
+  if (isBolnaPayload(body)) return json(res, 200, await handleBolnaWebhook(body));
+  const call = callFromGenericWebhook(body);
+  json(res, 201, publicCall(saveCall(call)));
 });
 
-route("GET", /^\/api\/saved-views$/, (_req, res) => json(res, 200, db.savedViews));
+/**
+ * POST /api/bolna/webhook?token=BOLNA_SECRET: set as the agent's webhook_url.
+ * Bolna posts here on every status change. We answer at once and process
+ * afterwards, so Bolna never times out waiting for the call analysis.
+ */
+route("POST", /^\/api\/bolna\/webhook$/, "bolna", async (req, res) => {
+  const body = await readBody(req);
+  if (body === null) return fail(res, 400, "Body must be valid JSON");
+  json(res, 200, { ok: true });
+  handleBolnaWebhook(body).catch((err) => console.error("[bolna] webhook processing failed:", err));
+});
+
+/* --- Bolna tools, called mid-call ---------------------------------- */
+
+route(/^(GET|POST)$/, /^\/api\/bolna\/tools\/([a-z_]+)$/, "bolna", async (req, res, [name], { url }) => {
+  const tool = TOOLS[name];
+  if (!tool) return fail(res, 404, `Unknown tool ${name}`);
+  const body = req.method === "POST" ? await readBody(req) : {};
+  const args = { ...Object.fromEntries(url.searchParams), ...(body ?? {}) };
+  delete args.token;
+  const started = Date.now();
+  let result;
+  try {
+    result = tool.run(args);
+  } catch (err) {
+    console.error(`[bolna] tool ${name} failed:`, err);
+    result = { ok: false, message: "Something went wrong on our side. Apologise and offer a call back from the clinic." };
+  }
+  console.log(`[bolna] ${name} ${JSON.stringify(args)} -> ${result.ok ? "ok" : "no"} in ${Date.now() - started} ms`);
+  // Always 200: Bolna hands the body to the LLM and ignores the status code.
+  json(res, 200, result);
+});
+
+route("GET", /^\/api\/saved-views$/, "admin", (_req, res) => json(res, 200, db.savedViews));
 
 /* --- appointments and slots ---------------------------------------- */
 
-route("GET", /^\/api\/appointments$/, (req, res) => {
-  const p = new URL(req.url, "http://x").searchParams;
+route("GET", /^\/api\/appointments$/, "admin", (_req, res, _m, { url }) => {
+  const p = url.searchParams;
   const from = p.get("from");
   const to = p.get("to");
   const status = p.get("status");
+  const phone = p.get("phone");
   const out = db.appointments
     .filter((a) => {
       if (status && status !== "all" && a.status !== status) return false;
+      if (phone && !samePhone(a.phone, phone)) return false;
       const t = new Date(a.startsAt).getTime();
       if (from && t < new Date(from).getTime()) return false;
       if (to && t > new Date(to).getTime()) return false;
@@ -311,143 +393,144 @@ route("GET", /^\/api\/appointments$/, (req, res) => {
   json(res, 200, out);
 });
 
-route("GET", /^\/api\/appointments\/([^/]+)$/, (_req, res, [id]) => {
+route("GET", /^\/api\/appointments\/([^/]+)$/, "admin", (_req, res, [id]) => {
   const apt = db.appointments.find((a) => a.id === id);
   if (!apt) return fail(res, 404, `Appointment ${id} not found`);
   json(res, 200, apt);
 });
 
 /**
- * GET /api/slots?doctorId=&date=YYYY-MM-DD   -> { slots: ["09:00", ...] }   (agent)
- * GET /api/slots?doctorId=&startsAt=ISO      -> { available: true|false }   (dashboard)
- *
- * This is the Bolna tool that runs mid-call, so it must answer in well under a
- * second. Keep the Sheet read cached for the duration of a call.
+ * GET /api/slots?doctorId=&date=YYYY-MM-DD   -> { slots: ["09:00", ...] }   (clinic time)
+ * GET /api/slots?doctorId=&startsAt=ISO      -> { available: true|false }
  */
-route("GET", /^\/api\/slots$/, (req, res) => {
-  const p = new URL(req.url, "http://x").searchParams;
-  const doctorId = p.get("doctorId") ?? p.get("doctor");
-  if (!doctorId) return fail(res, 400, "doctorId is required");
+route("GET", /^\/api\/slots$/, "admin-or-bolna", (_req, res, _m, { url }) => {
+  const p = url.searchParams;
+  const query = p.get("doctorId") ?? p.get("doctor");
+  if (!query) return fail(res, 400, "doctorId is required");
+  const doctor = findDoctor(query);
+  if (!doctor) return fail(res, 404, `Doctor ${query} not found`);
 
   const startsAt = p.get("startsAt");
   if (startsAt) {
-    return json(res, 200, {
-      available: !slotTaken(doctorId, startsAt, p.get("ignoreId") ?? undefined),
-    });
+    if (Number.isNaN(new Date(startsAt).getTime())) return fail(res, 400, "startsAt must be an ISO 8601 date");
+    return json(res, 200, { available: !slotTaken(doctor.id, startsAt, p.get("ignoreId") ?? undefined) });
   }
 
-  const date = p.get("date") ?? todayISO();
-  const slots = freeSlots(doctorId, date);
-  if (slots === null) return fail(res, 404, `Doctor ${doctorId} not found`);
-  json(res, 200, { doctorId, date, slots });
+  const date = resolveDate(p.get("date") ?? "today") ?? clinicDate();
+  json(res, 200, { doctorId: doctor.id, date, slots: freeSlots(doctor, date) });
 });
 
-route("POST", /^\/api\/appointments$/, async (req, res) => {
+route("POST", /^\/api\/appointments$/, "admin-or-bolna", async (req, res) => {
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
-  const { patientName, phone, doctorId, startsAt, reason } = body ?? {};
-  if (!patientName || !phone || !doctorId || !startsAt) {
-    return fail(res, 422, "patientName, phone, doctorId and startsAt are required");
-  }
-  if (!db.doctors.some((d) => d.id === doctorId)) {
-    return fail(res, 404, `Doctor ${doctorId} not found`);
-  }
-  if (slotTaken(doctorId, startsAt)) {
-    return fail(res, 409, "That slot is already taken. Please pick another time.");
-  }
-  const doctor = db.doctors.find((d) => d.id === doctorId);
-  const appointment = {
-    id: makeId("apt"),
-    patientName,
-    phone,
-    doctorId,
-    startsAt,
-    durationMin: body.durationMin ?? doctor.slotDurationMin,
-    reason: reason ?? "",
-    status: "confirmed",
-    bookedBy: body.bookedBy === "staff" ? "staff" : "ai",
-    whatsappSent: true,
-  };
-  db.appointments.push(appointment);
-  // TODO(sheets): append the row, then send the WhatsApp confirmation.
-  json(res, 201, appointment);
+  const result = createAppointment(body ?? {}, { strictHours: body?.bookedBy === "ai" });
+  if (!result.ok) return fail(res, result.status, result.error);
+  const apt = result.appointment;
+  // Wait briefly for the confirmation so whatsappSent is true when we answer;
+  // a slow provider finishes in the background and updates the row then.
+  const sent = notifyPatient("confirmed", apt).then(({ channel }) => recordConfirmation(apt, channel));
+  await Promise.race([sent, new Promise((r) => setTimeout(r, 4000))]);
+  json(res, 201, apt);
 });
 
-route("PATCH", /^\/api\/appointments\/([^/]+)$/, async (req, res, [id]) => {
-  const apt = db.appointments.find((a) => a.id === id);
-  if (!apt) return fail(res, 404, `Appointment ${id} not found`);
+route("PATCH", /^\/api\/appointments\/([^/]+)$/, "admin-or-bolna", async (req, res, [id]) => {
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
-
-  if (body.startsAt && new Date(body.startsAt).getTime() !== new Date(apt.startsAt).getTime()) {
-    if (slotTaken(apt.doctorId, body.startsAt, id)) {
-      return fail(res, 409, "That slot is already taken. Please pick another time.");
-    }
-    apt.whatsappSent = true;
-    // Moving an appointment implies "rescheduled" unless the caller says otherwise.
-    // The voice agent often only sends the new time, so do not rely on it.
-    if (!body.status) body.status = "rescheduled";
+  const result = updateAppointment(id, body ?? {});
+  if (!result.ok) return fail(res, result.status, result.error);
+  const apt = result.appointment;
+  if (body.status === "cancelled" && result.previousStatus !== "cancelled") {
+    void notifyPatient("cancelled", apt);
+  } else if (result.moved) {
+    const sent = notifyPatient("rescheduled", apt).then(({ channel }) => recordConfirmation(apt, channel));
+    await Promise.race([sent, new Promise((r) => setTimeout(r, 4000))]);
   }
-  Object.assign(apt, body);
-  if (body.status === "cancelled") apt.whatsappSent = false;
-  // TODO(sheets): update the row in the Appointments tab.
   json(res, 200, apt);
 });
 
 /* --- doctors ------------------------------------------------------- */
 
-route("GET", /^\/api\/doctors$/, (_req, res) => json(res, 200, db.doctors));
+const DOCTOR_FIELDS = ["name", "speciality", "fee", "slotDurationMin", "availability"];
+const validAvailability = (a) =>
+  Array.isArray(a) && a.every((b) => b && Number.isInteger(Number(b.day)) && /^\d{2}:\d{2}$/.test(b.start) && /^\d{2}:\d{2}$/.test(b.end) && b.start < b.end);
 
-route("POST", /^\/api\/doctors$/, async (req, res) => {
+route("GET", /^\/api\/doctors$/, "admin-or-bolna", (_req, res) => json(res, 200, db.doctors));
+
+route("POST", /^\/api\/doctors$/, "admin", async (req, res) => {
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
   if (!body.name) return fail(res, 422, "name is required");
+  if (body.availability !== undefined && !validAvailability(body.availability)) {
+    return fail(res, 422, "availability must be a list of { day, start: \"HH:mm\", end: \"HH:mm\" }");
+  }
+  const slug = String(body.name).toLowerCase().replace(/^dr\.?\s*/, "").split(/\s+/).pop()?.replace(/[^a-z]/g, "");
+  const id = slug && !db.doctors.some((d) => d.id === `doc-${slug}`) ? `doc-${slug}` : makeId("doc");
   const doctor = {
-    id: makeId("doc"),
+    id,
     name: body.name,
     speciality: body.speciality ?? "General Physician",
     fee: Number(body.fee ?? 500),
-    slotDurationMin: Number(body.slotDurationMin ?? 15),
-    availability: body.availability ?? [],
+    slotDurationMin: Number(body.slotDurationMin ?? 15) || 15,
+    availability: (body.availability ?? []).map((b) => ({ day: Number(b.day), start: b.start, end: b.end })),
   };
   db.doctors.push(doctor);
+  persistTable("doctors");
+  knowledgeChanged();
   json(res, 201, doctor);
 });
 
-route("PATCH", /^\/api\/doctors\/([^/]+)$/, async (req, res, [id]) => {
+route("PATCH", /^\/api\/doctors\/([^/]+)$/, "admin", async (req, res, [id]) => {
   const doctor = db.doctors.find((d) => d.id === id);
   if (!doctor) return fail(res, 404, `Doctor ${id} not found`);
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
-  Object.assign(doctor, body);
+  if (body.availability !== undefined && !validAvailability(body.availability)) {
+    return fail(res, 422, "availability must be a list of { day, start: \"HH:mm\", end: \"HH:mm\" }");
+  }
+  for (const k of DOCTOR_FIELDS) if (body[k] !== undefined) doctor[k] = body[k];
+  doctor.fee = Number(doctor.fee) || 0;
+  doctor.slotDurationMin = Number(doctor.slotDurationMin) || 15;
+  persistTable("doctors");
+  knowledgeChanged();
   json(res, 200, doctor);
 });
 
-route("DELETE", /^\/api\/doctors\/([^/]+)$/, (_req, res, [id]) => {
+route("DELETE", /^\/api\/doctors\/([^/]+)$/, "admin", (_req, res, [id]) => {
   const before = db.doctors.length;
   db.doctors = db.doctors.filter((d) => d.id !== id);
   if (db.doctors.length === before) return fail(res, 404, `Doctor ${id} not found`);
+  persistTable("doctors");
+  knowledgeChanged();
   noContent(res);
 });
 
 /* --- clinic, faqs, knowledge --------------------------------------- */
 
-route("GET", /^\/api\/clinic$/, (_req, res) => json(res, 200, db.clinic));
+route("GET", /^\/api\/clinic$/, "admin-or-bolna", (_req, res) => json(res, 200, db.clinic));
 
-route("PUT", /^\/api\/clinic$/, async (req, res) => {
+route("PUT", /^\/api\/clinic$/, "admin", async (req, res) => {
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
-  db.clinic = { ...db.clinic, ...body };
-  // TODO(sheets): write the Clinic tab and the FAQs tab.
+  const next = { ...db.clinic, ...body };
+  if (body.agent) next.agent = { ...db.clinic.agent, ...body.agent };
+  if (body.escalation) next.escalation = { ...db.clinic.escalation, ...body.escalation };
+  if (Array.isArray(body.faqs)) {
+    next.faqs = body.faqs
+      .filter((f) => f && f.question)
+      .map((f) => ({ id: f.id || makeId("faq"), question: f.question, answer: f.answer ?? "", hits: Number(f.hits ?? 0) }));
+  }
+  db.clinic = next;
+  persistTable("clinic");
+  knowledgeChanged();
   json(res, 200, db.clinic);
 });
 
-/** The Bolna FAQ tool reads this. Keep it tiny and fast. */
-route("GET", /^\/api\/faqs$/, (_req, res) => json(res, 200, db.clinic.faqs));
+/** The FAQ tool: FAQs plus the knowledge base, as VOICE-AGENT.md recommends. */
+route("GET", /^\/api\/faqs$/, "admin-or-bolna", (_req, res) => json(res, 200, db.clinic.faqs));
 
-route("GET", /^\/api\/knowledge$/, (_req, res) => json(res, 200, db.knowledge));
+route("GET", /^\/api\/knowledge$/, "admin", (_req, res) => json(res, 200, db.knowledge));
 
-route("POST", /^\/api\/knowledge$/, async (req, res) => {
+route("POST", /^\/api\/knowledge$/, "admin", async (req, res) => {
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
   if (!body.title || !body.body) return fail(res, 422, "title and body are required");
@@ -455,167 +538,162 @@ route("POST", /^\/api\/knowledge$/, async (req, res) => {
     id: makeId("kb"),
     title: body.title,
     body: body.body,
-    source: body.source ?? "staff",
+    source: ["faq", "document", "staff"].includes(body.source) ? body.source : "staff",
     updatedAt: new Date().toISOString(),
   };
   db.knowledge.unshift(item);
+  persistTable("knowledge");
+  knowledgeChanged();
   json(res, 201, item);
 });
 
-route("PATCH", /^\/api\/knowledge\/([^/]+)$/, async (req, res, [id]) => {
+route("PATCH", /^\/api\/knowledge\/([^/]+)$/, "admin", async (req, res, [id]) => {
   const item = db.knowledge.find((k) => k.id === id);
   if (!item) return fail(res, 404, `Knowledge item ${id} not found`);
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
-  Object.assign(item, body, { updatedAt: new Date().toISOString() });
+  for (const k of ["title", "body", "source"]) if (body[k] !== undefined) item[k] = body[k];
+  item.updatedAt = new Date().toISOString();
+  persistTable("knowledge");
+  knowledgeChanged();
   json(res, 200, item);
 });
 
-route("DELETE", /^\/api\/knowledge\/([^/]+)$/, (_req, res, [id]) => {
+route("DELETE", /^\/api\/knowledge\/([^/]+)$/, "admin", (_req, res, [id]) => {
   const before = db.knowledge.length;
   db.knowledge = db.knowledge.filter((k) => k.id !== id);
   if (db.knowledge.length === before) return fail(res, 404, `Knowledge item ${id} not found`);
+  persistTable("knowledge");
+  knowledgeChanged();
   noContent(res);
 });
 
 /* --- agent --------------------------------------------------------- */
 
-route("GET", /^\/api\/agent\/metrics$/, (_req, res) => {
-  const total = db.calls.length || 1;
-  const resolved = db.calls.filter((c) => c.resolved).length;
-  const handoffs = db.calls.filter((c) => c.outcome === "human").length;
-  const answered = db.calls.filter((c) => c.durationSec > 0);
-  const byIntent = new Map();
-  for (const c of db.calls) {
-    const e = byIntent.get(c.intent) ?? { total: 0, resolved: 0 };
-    e.total += 1;
-    if (c.resolved) e.resolved += 1;
-    byIntent.set(c.intent, e);
-  }
-  json(res, 200, {
-    resolutionRate: resolved / total,
-    containmentRate: (total - handoffs) / total,
-    avgHandleSec: Math.round(
-      answered.reduce((s, c) => s + c.durationSec, 0) / Math.max(answered.length, 1)
-    ),
-    humanHandoffs: handoffs,
-    needsReview: db.calls.filter((c) => !c.resolved).length,
-    reviewQueue: db.calls.filter((c) => !c.resolved).map((c) => c.id),
-    accuracyTrend: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label, i) => ({
-      label,
-      value: [0.86, 0.88, 0.87, 0.9, 0.91, 0.93, 0.94][i],
-    })),
-    intents: [...byIntent.entries()]
-      .map(([intent, v]) => ({
-        intent,
-        total: v.total,
-        resolved: v.resolved,
-        accuracy: v.resolved / v.total,
-      }))
-      .sort((a, b) => b.total - a.total),
-  });
-});
+route("GET", /^\/api\/agent\/metrics$/, "admin", (_req, res) => json(res, 200, agentMetrics()));
 
-route("POST", /^\/api\/agent\/test$/, async (req, res) => {
+/** The test console: one utterance, a real agent reply, and a verdict. */
+route("POST", /^\/api\/agent\/test$/, "admin", async (req, res) => {
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
   const utterance = String(body.utterance ?? "").trim();
   if (!utterance) return fail(res, 422, "utterance is required");
-  // TODO(voice): forward this to the Bolna agent in sandbox mode so the test
-  // console exercises the same brain as the phone line.
-  const escalates = /emergency|urgent|chest pain|human|staff/i.test(utterance);
+  const out = await chat({ sessionId: `test-${makeId("t")}`, message: utterance });
+  const unsure = /samajh nahi|not sure|call back|staff .*call|don't know|pata nahi/i.test(out.reply);
+  const verdict = out.escalated ? "warn" : unsure ? "warn" : "pass";
   json(res, 200, {
     transcript: [
       { role: "user", text: utterance },
-      {
-        role: "ai",
-        text: escalates
-          ? "Main aapko clinic staff se connect kar rahi hoon."
-          : "Yeh clinic ke knowledge base se answer kiya ja sakta hai.",
-      },
+      { role: "ai", text: out.reply },
     ],
-    verdict: escalates ? "warn" : "pass",
-    note: escalates
-      ? "The agent escalated instead of answering. Add this to the knowledge base so it can handle it directly."
-      : "Answered from the knowledge base with high confidence.",
+    verdict,
+    note: out.escalated
+      ? "The agent handed this to staff. Right for emergencies and requests for a human; otherwise add the answer to the knowledge base."
+      : unsure
+        ? "The agent was not sure. Add this to the FAQs or knowledge base so it can answer directly."
+        : `Answered${out.actions.length ? ` using ${[...new Set(out.actions)].join(", ")}` : ""}${out.engine === "rules" ? " (rule-based: set GEMINI_API_KEY for the full agent)" : ""}.`,
   });
 });
 
-route("POST", /^\/api\/agent\/simulate$/, async (req, res) => {
+/** The "Try the agent" dock. Bookings here are dry runs. */
+route("POST", /^\/api\/agent\/simulate$/, "admin", async (req, res) => {
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
-  json(res, 200, { reply: mockReply(String(body.message ?? "")) });
+  const message = String(body.message ?? "").trim();
+  if (!message) return fail(res, 422, "message is required");
+  const out = await chat({ sessionId: body.sessionId, message, history: body.history });
+  json(res, 200, out);
+});
+
+/** "Call me": the phone agent rings this number, so you can hear the real thing. */
+route("POST", /^\/api\/agent\/call$/, "admin", async (req, res) => {
+  const body = await readBody(req);
+  if (body === null) return fail(res, 400, "Body must be valid JSON");
+  const phone = String(body.phone ?? "").trim();
+  if (phone.replace(/\D/g, "").length < 10) return fail(res, 422, "Enter a valid 10 digit mobile number.");
+  if (!integrations.bolna()) return fail(res, 503, "The phone agent is not connected yet. Add BOLNA_API_KEY on the server.");
+  try {
+    const out = await startCall(phone, { test: true });
+    json(res, 200, { ok: true, executionId: out.execution_id ?? null, status: out.status ?? "queued" });
+  } catch (err) {
+    fail(res, 502, err.message);
+  }
 });
 
 /* --- outbound, usage, onboarding ----------------------------------- */
 
-route("GET", /^\/api\/campaigns$/, (_req, res) => json(res, 200, db.campaigns));
+route("GET", /^\/api\/campaigns$/, "admin", (_req, res) => json(res, 200, db.campaigns));
 
-route("POST", /^\/api\/campaigns$/, async (req, res) => {
+route("POST", /^\/api\/campaigns$/, "admin", async (req, res) => {
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
   if (!body.name) return fail(res, 422, "name is required");
   const campaign = {
-    id: makeId("camp"),
     status: "scheduled",
+    type: "reminder",
+    channel: "whatsapp",
+    script: "",
+    ...body,
+    id: makeId("camp"),
     contacted: 0,
     connected: 0,
     converted: 0,
-    audience: 0,
-    ...body,
+    audience: Number(body.audience ?? 0),
   };
   db.campaigns.unshift(campaign);
+  persistTable("campaigns");
   json(res, 201, campaign);
 });
 
-route("PATCH", /^\/api\/campaigns\/([^/]+)$/, async (req, res, [id]) => {
+route("PATCH", /^\/api\/campaigns\/([^/]+)$/, "admin", async (req, res, [id]) => {
   const campaign = db.campaigns.find((c) => c.id === id);
   if (!campaign) return fail(res, 404, `Campaign ${id} not found`);
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
-  Object.assign(campaign, body);
+  for (const k of ["status", "name", "script", "channel", "scheduledAt"]) if (body[k] !== undefined) campaign[k] = body[k];
+  persistTable("campaigns");
   json(res, 200, campaign);
 });
 
-route("GET", /^\/api\/usage$/, (_req, res) => json(res, 200, db.usage));
+route("GET", /^\/api\/usage$/, "admin", (_req, res) => json(res, 200, usage()));
 
-route("GET", /^\/api\/onboarding$/, (_req, res) => json(res, 200, db.onboarding));
+route("GET", /^\/api\/onboarding$/, "admin", (_req, res) => json(res, 200, onboarding()));
 
-route("PATCH", /^\/api\/onboarding\/([^/]+)$/, async (req, res, [id]) => {
-  const step = db.onboarding.find((s) => s.id === id);
-  if (!step) return fail(res, 404, `Step ${id} not found`);
+route("PATCH", /^\/api\/onboarding\/([^/]+)$/, "admin", async (req, res, [id]) => {
+  if (!db.onboarding.some((s) => s.id === id)) return fail(res, 404, `Step ${id} not found`);
   const body = await readBody(req);
   if (body === null) return fail(res, 400, "Body must be valid JSON");
-  if (typeof body.done === "boolean") step.done = body.done;
-  json(res, 200, step);
+  if (typeof body.done === "boolean") {
+    db.meta.onboardingDone = { ...(db.meta.onboardingDone ?? {}), [id]: body.done };
+    persistTable("meta");
+  }
+  json(res, 200, onboarding().find((s) => s.id === id));
 });
-
-/* --- canned reply for the chat dock -------------------------------- */
-
-function mockReply(message) {
-  const m = message.toLowerCase();
-  if (/(book|appoint|dikhana|slot|milna)/.test(m))
-    return "Bilkul! Aap kis doctor se milna chahenge? Dr. Sharma, Dr. Verma ya Dr. Khan?";
-  if (/(fee|charge|kitni|price)/.test(m))
-    return "Dr. Sharma ₹500, Dr. Verma ₹700 aur Dr. Khan ₹600 charge karte hain.";
-  if (/(timing|khulti|open|band|hours)/.test(m))
-    return "Clinic Monday se Saturday, subah 9 se raat 8 baje tak khuli rehti hai.";
-  if (/(emergency|urgent|chest pain|human)/.test(m))
-    return "Yeh urgent lagta hai. Kripya 108 par call karein, main staff se connect kar rahi hoon.";
-  return "Samajh gayi. Appointment book karna hai, fees jaanni hai, ya clinic ke timings?";
-}
 
 /* ------------------------------------------------------------------ */
 /* Server                                                             */
 /* ------------------------------------------------------------------ */
 
-export function createApiServer() {
-  return createServer(async (req, res) => {
+function allowOrigin(origin) {
+  if (config.corsOrigins.includes("*")) return "*";
+  return config.corsOrigins.includes(origin) ? origin : "";
+}
+
+const methodMatches = (m, method) => (typeof m === "string" ? m === method : m.test(method));
+
+export function createApiServer({ store = createStore() } = {}) {
+  useStore(store);
+  const ready = store.init().then(() => {
+    events.on("knowledge", () => scheduleAgentSync());
+  });
+  ready.catch((err) => {
+    console.error("[server] storage failed to start:", err.message);
+  });
+
+  const server = createServer(async (req, res) => {
     const origin = req.headers.origin ?? "";
-    res.setHeader(
-      "Access-Control-Allow-Origin",
-      ALLOWED_ORIGINS.includes("*") ? "*" : ALLOWED_ORIGINS.includes(origin) ? origin : "null"
-    );
+    const allowed = allowOrigin(origin);
+    if (allowed) res.setHeader("Access-Control-Allow-Origin", allowed);
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
     res.setHeader("Vary", "Origin");
@@ -625,30 +703,72 @@ export function createApiServer() {
       return res.end();
     }
 
-    const path = (req.url ?? "/").split("?")[0].replace(/\/+$/, "") || "/";
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const path = url.pathname.replace(/\/+$/, "") || "/";
 
-    for (const { method, pattern, handler } of routes) {
-      if (method !== req.method) continue;
+    if (path !== "/health") {
+      try {
+        await ready;
+      } catch (err) {
+        return fail(res, 503, `Storage is not available: ${err.message}`);
+      }
+    }
+
+    for (const { method, pattern, access, handler } of routes) {
+      if (!methodMatches(method, req.method)) continue;
       const match = pattern.exec(path);
       if (!match) continue;
+
+      const ok =
+        access === "public" ||
+        (access === "admin" && isAdmin(req)) ||
+        (access === "bolna" && isBolna(req, url)) ||
+        (access === "admin-or-bolna" && (isAdmin(req) || isBolna(req, url)));
+      if (!ok) return fail(res, 401, "Please sign in again.");
+
       try {
-        return await handler(req, res, match.slice(1));
+        return await handler(req, res, match.slice(1), { url, store });
       } catch (err) {
         console.error(`${req.method} ${path} failed:`, err);
-        return fail(res, 500, "Internal server error");
+        if (!res.headersSent) return fail(res, 500, "Internal server error");
+        return res.end();
       }
     }
 
     fail(res, 404, `No route for ${req.method} ${path}`);
   });
+
+  server.ready = ready;
+  server.store = store;
+  return server;
 }
 
 // Only listen when run directly, so tests can import createApiServer().
 const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop());
 if (isMain) {
-  createApiServer().listen(PORT, () => {
-    console.log(`ClinicVaani API listening on http://localhost:${PORT}`);
-    console.log(`Health check: http://localhost:${PORT}/health`);
-    console.log("Storage is in memory. Restart to reset.");
+  const server = createApiServer();
+  server.listen(config.port, async () => {
+    console.log(`Dhwani API listening on http://localhost:${config.port}`);
+    try {
+      await server.ready;
+    } catch {
+      return;
+    }
+    const s = server.store.status();
+    console.log(`  storage    ${s.kind}: ${s.detail}`);
+    console.log(`  phone      ${integrations.bolna() ? `Bolna, agent ${agentId() || "(not created yet: POST /api/integrations/bolna/sync)"}` : "off (set BOLNA_API_KEY)"}`);
+    console.log(`  public url ${config.publicUrl || "not set (Bolna cannot reach this server until PUBLIC_URL is set)"}`);
+    console.log(`  messages   ${messagingStatus().channels.join(", ") || "off (set META_WA_* or TWILIO_*)"}`);
+    console.log(`  chat agent ${integrations.gemini() ? `Gemini ${config.gemini.model}` : "rule-based (set GEMINI_API_KEY)"}`);
+    console.log(`  login      ${authRequired() ? "required" : "open (set ADMIN_PASSWORD before going public)"}`);
+    startReminderSchedule();
   });
+
+  const shutdown = async () => {
+    console.log("Shutting down, flushing pending writes…");
+    await server.store.flush?.();
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }

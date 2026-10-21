@@ -1,5 +1,5 @@
 {
-  "name": "aawazdoc",
+  "name": "dhwani",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -10,7 +10,11 @@
     "build": "tsc -b && vite build",
     "build:preview": "vite build --config vite.preview.config.ts && node scripts/build-preview.mjs",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:sheets": "node server/test.sheets.mjs",
+    "test": "node server/test.mjs && node server/test.sheets.mjs",
+    "start:api": "node server/index.mjs",
+    "bolna:sync": "node server/scripts/bolna-sync.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",
@@ -46,5 +50,8 @@
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
     "vite": "^5.4.9"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

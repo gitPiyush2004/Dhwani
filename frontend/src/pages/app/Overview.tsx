@@ -53,6 +53,7 @@ import { useCountUp } from "@/lib/hooks";
 import { dayLabel, timeLabel } from "@/lib/datetime";
 import { CHART_COLORS, OUTCOME_META, STATUS_META } from "@/lib/outcome";
 import { cn, formatDuration, inrShort, pct } from "@/lib/utils";
+import { USE_LIVE_API } from "@/lib/config";
 import { useQueryClient } from "@tanstack/react-query";
 
 function ChartTooltip({ active, payload, label }: any) {
@@ -82,7 +83,7 @@ export default function Overview() {
   const callsQ = useQuery({ queryKey: ["calls"], queryFn: () => getCalls() });
   const apptsQ = useQuery({ queryKey: ["appointments"], queryFn: () => getAppointments() });
   const doctorsQ = useQuery({ queryKey: ["doctors"], queryFn: getDoctors });
-  const liveQ = useQuery({ queryKey: ["live-calls"], queryFn: getLiveCalls });
+  const liveQ = useQuery({ queryKey: ["live-calls"], queryFn: getLiveCalls, refetchInterval: USE_LIVE_API ? 5_000 : false });
   const metricsQ = useQuery({ queryKey: ["agent-metrics"], queryFn: getAgentMetrics });
   const onboardingQ = useQuery({ queryKey: ["onboarding"], queryFn: getOnboarding });
 

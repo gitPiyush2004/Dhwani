@@ -1,6 +1,9 @@
 import type {
+  AgentChatReply,
+  AgentMessage,
   AgentMetrics,
   AgentTestRun,
+  AuthStatus,
   Appointment,
   AppointmentFilters,
   Call,
@@ -10,16 +13,18 @@ import type {
   DailyCallsPoint,
   DashboardStats,
   Doctor,
+  Integrations,
   KnowledgeItem,
   LiveCall,
   NewAppointmentInput,
   OnboardingStep,
   OutcomeSlice,
+  PublicConfig,
   SavedView,
   Usage,
 } from "@/types";
 import { USE_LIVE_API } from "./config";
-import { http, qs } from "./http";
+import { http, httpBlob, qs, setToken } from "./http";
 import * as mock from "./api.mock";
 
 // ===========================================================================
@@ -369,26 +374,109 @@ export async function setOnboardingStep(id: string, done: boolean): Promise<Onbo
 }
 
 /* -------------------------------------------------------------------------
- * Agent chat simulator (frontend demo)
+ * The agent: chat (same brain and tools as the phone line) and "Call me"
  * ---------------------------------------------------------------------- */
 
-/** POST /api/agent/simulate  body { message, history } -> { reply } */
-export async function getAgentReply(message: string): Promise<string> {
-  if (USE_LIVE_API) {
-    const res = await http<{ reply: string }>("/api/agent/simulate", {
+/**
+ * POST /api/agent/simulate  body { message, sessionId, history } -> AgentChatReply
+ * Bookings made from the chat are dry runs on the server.
+ */
+export async function chatWithAgent(
+  message: string,
+  sessionId: string,
+  history: AgentMessage[] = []
+): Promise<AgentChatReply> {
+  if (USE_LIVE_API)
+    return http<AgentChatReply>("/api/agent/simulate", {
       method: "POST",
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, sessionId, history }),
     });
-    return res.reply;
-  }
-  return mock.getAgentReply(message);
+  const reply = await mock.getAgentReply(message);
+  return { reply, actions: [], escalated: false, engine: "rules" };
+}
+
+/** Kept for older callers. */
+export async function getAgentReply(message: string): Promise<string> {
+  return (await chatWithAgent(message, "default")).reply;
+}
+
+/** POST /api/agent/call  body { phone } -> the phone agent rings this number */
+export async function callMeWithAgent(phone: string): Promise<{ ok: true; executionId: string | null }> {
+  if (USE_LIVE_API)
+    return http<{ ok: true; executionId: string | null }>("/api/agent/call", {
+      method: "POST",
+      body: JSON.stringify({ phone }),
+    });
+  await new Promise((r) => setTimeout(r, 600));
+  throw new Error("Connect the backend to place real calls.");
+}
+
+/* -------------------------------------------------------------------------
+ * Recordings, auth, public config, integrations
+ * ---------------------------------------------------------------------- */
+
+/** GET /api/calls/:id/recording -> the audio file (fetched with the login token) */
+export async function getRecording(recordingUrl: string): Promise<Blob | null> {
+  if (!USE_LIVE_API || !recordingUrl.startsWith("/api/")) return null;
+  return httpBlob(recordingUrl);
+}
+
+/** GET /api/auth/status -> AuthStatus */
+export async function getAuthStatus(): Promise<AuthStatus> {
+  if (USE_LIVE_API) return http<AuthStatus>("/api/auth/status");
+  return { required: false, authenticated: true };
+}
+
+/** POST /api/auth/login  body { password } -> stores the session token */
+export async function signIn(password: string): Promise<void> {
+  const res = await http<{ token: string }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+  setToken(res.token);
+}
+
+export function signOut() {
+  setToken("");
+}
+
+/** GET /api/public/config -> PublicConfig (no login needed: the landing page uses it) */
+export async function getPublicConfig(): Promise<PublicConfig> {
+  if (USE_LIVE_API) return http<PublicConfig>("/api/public/config");
+  return { clinicName: "", agentName: "", demoPhone: null, voiceEnabled: false };
+}
+
+/** GET /api/integrations -> what is connected, for Settings > Integrations */
+export async function getIntegrations(): Promise<Integrations | null> {
+  if (USE_LIVE_API) return http<Integrations>("/api/integrations");
+  return null;
+}
+
+/** POST /api/integrations/bolna/sync -> creates or updates the phone agent */
+export async function syncPhoneAgent(): Promise<{ agentId: string; created: boolean }> {
+  return http<{ agentId: string; created: boolean }>("/api/integrations/bolna/sync", { method: "POST" });
+}
+
+/** POST /api/integrations/bolna/link-number -> inbound calls to the number reach the agent */
+export async function linkPhoneNumber(phone?: string): Promise<unknown> {
+  return http<unknown>("/api/integrations/bolna/link-number", {
+    method: "POST",
+    body: JSON.stringify(phone ? { phone } : {}),
+  });
+}
+
+/** POST /api/reminders/run -> sends tomorrow's reminders now */
+export async function runRemindersNow(): Promise<{ due?: number; delivered?: number; skipped?: string }> {
+  return http("/api/reminders/run", { method: "POST" });
 }
 
 /* -------------------------------------------------------------------------
  * Not called by the dashboard, but part of the same contract:
  *
- *   POST /api/calls/webhook     Bolna posts the transcript + summary here after
- *                               every call. This is what fills the Calls table.
+ *   POST /api/bolna/webhook      Bolna posts every call's status here; the
+ *                                finished call becomes a row in the Calls tab.
+ *   GET|POST /api/bolna/tools/*  The agent's booking tools, called mid-call.
+ *   POST /api/calls/webhook      The generic post-call webhook.
  *
- * It is implemented in server/index.mjs and specified in docs/API-CONTRACT.md.
+ * All implemented in server/ and specified in docs/API-CONTRACT.md.
  * ---------------------------------------------------------------------- */

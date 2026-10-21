@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import Landing from "@/pages/Landing";
 import DashboardLayout from "@/pages/app/DashboardLayout";
+import { AuthGate } from "@/components/app/AuthGate";
 import Overview from "@/pages/app/Overview";
 import Calls from "@/pages/app/Calls";
 import Appointments from "@/pages/app/Appointments";
@@ -12,7 +13,14 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
-      <Route path="/app" element={<DashboardLayout />}>
+      <Route
+        path="/app"
+        element={
+          <AuthGate>
+            <DashboardLayout />
+          </AuthGate>
+        }
+      >
         <Route index element={<Overview />} />
         <Route path="calls" element={<Calls />} />
         <Route path="appointments" element={<Appointments />} />

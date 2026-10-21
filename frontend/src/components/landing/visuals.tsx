@@ -57,7 +57,7 @@ export function MiniDashboard() {
           <span className="h-2 w-2 rounded-full bg-teal/60" />
         </span>
         <span className="mx-auto rounded-full border border-line bg-surface px-3 py-0.5 font-mono text-[10px] text-ink3">
-          app.aawazdoc.in
+          app.dhwani.in
         </span>
       </div>
 

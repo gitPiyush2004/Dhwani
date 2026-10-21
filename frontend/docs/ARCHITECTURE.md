@@ -169,7 +169,7 @@ The complete contract, with request and response bodies and error codes, is in
 ├── server/              a working reference backend (zero dependencies)
 │   ├── index.mjs            implements the whole contract
 │   ├── data.mjs             seed data, shaped like the Sheet tabs
-│   └── test.mjs             34 assertions covering the contract
+│   └── test.mjs             the contract, Bolna tools, webhook, auth (+ test.sheets.mjs)
 └── docs/                this folder
 ```
 

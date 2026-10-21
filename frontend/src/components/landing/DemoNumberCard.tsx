@@ -1,8 +1,17 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DEMO_PHONE } from "@/lib/mockData";
+import { getPublicConfig } from "@/lib/api";
+
+/** The real number from the backend once the phone agent is live, else the placeholder. */
+export function useDemoPhone(): { phone: string; live: boolean } {
+  const q = useQuery({ queryKey: ["public-config"], queryFn: getPublicConfig, staleTime: 5 * 60_000 });
+  const real = q.data?.demoPhone;
+  return { phone: real || DEMO_PHONE, live: Boolean(real && q.data?.voiceEnabled) };
+}
 import { cn } from "@/lib/utils";
 
 export function DemoNumberCard({
@@ -13,10 +22,11 @@ export function DemoNumberCard({
   tone?: "light" | "dark";
 }) {
   const [copied, setCopied] = useState(false);
+  const { phone, live } = useDemoPhone();
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(DEMO_PHONE);
+      await navigator.clipboard.writeText(phone);
       setCopied(true);
       toast.success("Demo number copied", {
         description: "Paste it into your phone to try the agent.",
@@ -24,7 +34,7 @@ export function DemoNumberCard({
       setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error("Couldn't copy automatically", {
-        description: `The number is ${DEMO_PHONE}.`,
+        description: `The number is ${phone}.`,
       });
     }
   };
@@ -49,14 +59,20 @@ export function DemoNumberCard({
           <Phone className="h-4 w-4" />
         </span>
         <div>
-          <p className={cn("label", dark ? "text-night-mute" : "text-ink3")}>Demo line</p>
+          <p className={cn("label", dark ? "text-night-mute" : "text-ink3")}>{live ? "Call the AI receptionist" : "Demo line"}</p>
           <p
             className={cn(
               "tnum text-lg font-semibold tracking-tight",
               dark && "text-night-ink"
             )}
           >
-            {DEMO_PHONE}
+            {live ? (
+              <a href={`tel:${phone.replace(/\s/g, "")}`} className="hover:underline">
+                {phone}
+              </a>
+            ) : (
+              phone
+            )}
           </p>
         </div>
       </div>

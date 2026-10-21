@@ -232,7 +232,7 @@ escalation number).
   "faqs": [{ "id": "faq-1", "question": "What are the clinic timings?", "answer": "Monday to Saturday, 9:00 AM to 8:00 PM.", "hits": 41 }],
   "escalation": { "phone": "+91 98110 22334", "triggers": ["emergency keywords", "patient asks for a human", "ai not confident"] },
   "agent": {
-    "name": "AawazDoc",
+    "name": "Dhwani",
     "voice": "Meera (warm, Indian English + Hindi)",
     "speed": 1,
     "greeting": "Namaste! Sharma Family Clinic mein aapka swagat hai...",

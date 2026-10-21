@@ -18,7 +18,7 @@ import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Eyebrow } from "@/components/Stat";
 import { PhoneCallCard } from "@/components/landing/PhoneCallCard";
-import { DemoNumberCard } from "@/components/landing/DemoNumberCard";
+import { DemoNumberCard, useDemoPhone } from "@/components/landing/DemoNumberCard";
 import { Footer } from "@/components/landing/Footer";
 import {
   AgentVisual,
@@ -39,7 +39,7 @@ function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-night/95 text-night-ink">
       <div className="container flex h-16 items-center justify-between gap-4">
-        <Link to="/" aria-label="AawazDoc home" className="text-night-ink">
+        <Link to="/" aria-label="Dhwani home" className="text-night-ink">
           <Logo onDark />
         </Link>
         <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
@@ -141,9 +141,7 @@ function Hero() {
           {showNumber && (
             <div className="mt-4 animate-rise">
               <DemoNumberCard tone="dark" />
-              <p className="mt-2 text-[11.5px] text-night-mute">
-                Placeholder number. The live voice agent is connected separately.
-              </p>
+              <DemoNumberNote />
             </div>
           )}
 
@@ -627,5 +625,16 @@ export default function Landing() {
       </main>
       <Footer />
     </div>
+  );
+}
+
+function DemoNumberNote() {
+  const { live } = useDemoPhone();
+  return (
+    <p className="mt-2 text-[11.5px] text-night-mute">
+      {live
+        ? "A real call: speak Hindi, English or Hinglish and book an appointment."
+        : "Placeholder number. The live voice agent is connected separately."}
+    </p>
   );
 }

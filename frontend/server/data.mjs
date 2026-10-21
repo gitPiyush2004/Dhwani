@@ -13,7 +13,8 @@
 //   Clinic       -> db.clinic
 // ---------------------------------------------------------------------------
 
-export const makeId = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+export const makeId = (prefix) =>
+  `${prefix}-${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 6)}`;
 
 /* Deterministic RNG so the demo looks the same on every restart. */
 function makeRng(seedValue) {
@@ -78,7 +79,7 @@ const SUMMARY = {
 
 const TRANSCRIPTS = {
   booked: (name) => [
-    { speaker: "ai", text: "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon." },
+    { speaker: "ai", text: "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon." },
     { speaker: "patient", text: "Mujhe kal doctor ko dikhana hai." },
     { speaker: "ai", text: "Bilkul. Kal ke liye 10:30 AM, 12:00 PM aur 5:30 PM available hain." },
     { speaker: "patient", text: "12 baje ho jaye toh badhiya." },
@@ -114,6 +115,8 @@ function buildCalls() {
     const started = new Date(today);
     started.setDate(started.getDate() - dayOffset);
     started.setHours(9 + ((i * 3) % 10), (i * 7) % 60, Math.floor(rng() * 60), 0);
+    // Never in the future, whatever time zone the server runs in.
+    if (started.getTime() > Date.now() - 60_000) started.setTime(Date.now() - (i + 1) * 37 * 60_000);
 
     const lines = outcome === "missed" ? [] : (TRANSCRIPTS[outcome] ?? TRANSCRIPTS.faq)(name);
     let sec = 0;
@@ -188,8 +191,15 @@ function buildAppointments(doctors) {
   }).sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
 }
 
-/** Returns a fresh copy of the whole dataset. */
-export function seed() {
+/**
+ * Returns a fresh copy of the dataset.
+ *
+ * `demo: true` (the tests, and SEED_DEMO_DATA=true) adds 25 sample calls, a
+ * week of appointments, live calls and campaign numbers so the dashboard looks
+ * busy. `demo: false` is what a real clinic starts with: its configuration
+ * (clinic, doctors, FAQs, knowledge) and no invented activity.
+ */
+export function seed({ demo = true } = {}) {
   const doctors = [
     {
       id: "doc-sharma",
@@ -259,18 +269,18 @@ export function seed() {
     phone: "+91 98110 22334",
     languages: ["Hindi", "English", "Hinglish"],
     greeting:
-      "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon. Kaise madad kar sakti hoon?",
+      "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon. Kaise madad kar sakti hoon?",
     faqs,
     escalation: {
       phone: "+91 98110 22334",
       triggers: ["emergency keywords", "patient asks for a human", "ai not confident"],
     },
     agent: {
-      name: "AawazDoc",
+      name: "Dhwani",
       voice: "Meera (warm, Indian English + Hindi)",
       speed: 1,
       greeting:
-        "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon. Kaise madad kar sakti hoon?",
+        "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon. Kaise madad kar sakti hoon?",
       fallback:
         "Sorry, main yeh samajh nahi payi. Main aapko clinic staff se connect kar deti hoon.",
       guardrails: [
@@ -285,7 +295,7 @@ export function seed() {
 
   const now = Date.now();
 
-  return {
+  const data = {
     clinic,
     doctors,
     calls: buildCalls(),
@@ -426,5 +436,30 @@ export function seed() {
       { id: "v-human", label: "Handed to human", filters: { outcome: "human" } },
       { id: "v-missed", label: "Missed", filters: { outcome: "missed" } },
     ],
+  };
+
+  if (demo) return data;
+  return {
+    ...data,
+    calls: [],
+    appointments: [],
+    liveCalls: [],
+    campaigns: [
+      {
+        id: "camp-reminders",
+        name: "Appointment reminders",
+        type: "reminder",
+        status: "paused",
+        channel: "whatsapp",
+        audience: 0,
+        contacted: 0,
+        connected: 0,
+        converted: 0,
+        script:
+          "Every evening, send tomorrow's patients a WhatsApp reminder with the doctor, time and address.",
+      },
+    ],
+    usage: { ...data.usage, plan: "Starter", minutesUsed: 0 },
+    onboarding: data.onboarding.map((s) => ({ ...s, done: false })),
   };
 }

@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// AawazDoc domain types.
+// Dhwani domain types.
 // These mirror the shapes the real backend will return, so replacing the mock
 // layer in src/lib/api.ts with real REST calls changes nothing in the UI.
 // ---------------------------------------------------------------------------
@@ -286,4 +286,54 @@ export interface AgentTestRun {
   transcript: AgentMessage[];
   verdict: "pass" | "warn" | "fail";
   note: string;
+}
+
+// --- Live backend: auth, integrations, the real agent ----------------------
+
+export interface AuthStatus {
+  required: boolean;
+  authenticated: boolean;
+}
+
+export interface PublicConfig {
+  clinicName: string;
+  agentName: string;
+  /** The real number patients dial, once the phone agent is live. */
+  demoPhone: string | null;
+  voiceEnabled: boolean;
+}
+
+export interface AgentChatReply {
+  reply: string;
+  /** tools the agent used, e.g. "check_slots" */
+  actions: string[];
+  escalated: boolean;
+  engine: "gemini" | "rules";
+}
+
+export interface Integrations {
+  storage: {
+    kind: "sheets" | "file" | "memory";
+    ok: boolean;
+    detail: string;
+    lastSyncAt?: string | null;
+    pending?: number;
+    sheetUrl?: string;
+    serviceAccount?: string;
+  };
+  bolna: {
+    configured: boolean;
+    agentId: string | null;
+    phoneNumber: string | null;
+    publicUrl: string | null;
+    secretSet: boolean;
+    llm: string;
+    voice: string;
+    transcriber: string;
+    lastSync: { at: string | null; ok: boolean | null; error: string | null };
+    wallet: number | null;
+  };
+  messaging: { configured: boolean; channels: string[]; lastError: string | null };
+  gemini: { configured: boolean; model: string | null };
+  auth: { required: boolean };
 }

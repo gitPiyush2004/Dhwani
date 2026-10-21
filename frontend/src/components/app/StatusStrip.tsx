@@ -11,6 +11,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { LiveDot } from "@/components/voice/LiveCallCard";
 import { getClinic, getDashboardStats, getLiveCalls } from "@/lib/api";
 import { ALL_NAV } from "@/lib/nav";
+import { USE_LIVE_API } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
 function UserMenu() {
@@ -81,7 +82,7 @@ export function StatusStrip({ onOpenCommand }: { onOpenCommand: () => void }) {
   const { pathname } = useLocation();
   const [aiLive, setAiLive] = useState(true);
   const { data: stats } = useQuery({ queryKey: ["dashboard-stats"], queryFn: getDashboardStats });
-  const { data: live } = useQuery({ queryKey: ["live-calls"], queryFn: getLiveCalls });
+  const { data: live } = useQuery({ queryKey: ["live-calls"], queryFn: getLiveCalls, refetchInterval: USE_LIVE_API ? 5_000 : false });
 
   const current = ALL_NAV.find((n) => (n.end ? pathname === n.to : pathname.startsWith(n.to)));
   const liveCount = live?.length ?? 0;
@@ -89,7 +90,7 @@ export function StatusStrip({ onOpenCommand }: { onOpenCommand: () => void }) {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-bg">
       <div className="flex h-14 items-center gap-3 px-4 lg:px-8">
-        <Link to="/" className="md:hidden" aria-label="AawazDoc home">
+        <Link to="/" className="md:hidden" aria-label="Dhwani home">
           <Logo showText={false} />
         </Link>
 

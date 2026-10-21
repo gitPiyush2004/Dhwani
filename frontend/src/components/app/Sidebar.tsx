@@ -1,19 +1,21 @@
 import { Link, NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, PhoneCall } from "lucide-react";
+import { ArrowUpRight, LogOut, PhoneCall } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { LiveDot } from "@/components/voice/LiveCallCard";
 import { Progress } from "@/components/ui/atoms";
 import { NAV_GROUPS } from "@/lib/nav";
-import { getLiveCalls, getOnboarding, getUsage } from "@/lib/api";
+import { getAuthStatus, getLiveCalls, getOnboarding, getUsage, signOut } from "@/lib/api";
+import { USE_LIVE_API } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
 export function Sidebar() {
   const navigate = useNavigate();
-  const { data: live } = useQuery({ queryKey: ["live-calls"], queryFn: getLiveCalls });
+  const { data: live } = useQuery({ queryKey: ["live-calls"], queryFn: getLiveCalls, refetchInterval: USE_LIVE_API ? 5_000 : false });
   const { data: usage } = useQuery({ queryKey: ["usage"], queryFn: getUsage });
   const { data: onboarding } = useQuery({ queryKey: ["onboarding"], queryFn: getOnboarding });
+  const { data: auth } = useQuery({ queryKey: ["auth-status"], queryFn: getAuthStatus, staleTime: Infinity });
 
   const liveCount = live?.length ?? 0;
   const done = onboarding?.filter((s) => s.done).length ?? 0;
@@ -22,7 +24,7 @@ export function Sidebar() {
   return (
     <aside className="sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col border-r border-night-line bg-night text-night-ink md:flex">
       <div className="flex h-14 items-center px-5">
-        <Link to="/" aria-label="AawazDoc home" className="text-night-ink">
+        <Link to="/" aria-label="Dhwani home" className="text-night-ink">
           <Logo onDark />
         </Link>
       </div>
@@ -112,6 +114,18 @@ export function Sidebar() {
           </span>
           <ArrowUpRight className="h-3.5 w-3.5 text-night-mute" />
         </div>
+
+        {auth?.required && (
+          <button
+            onClick={() => {
+              signOut();
+              window.location.assign("/app");
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-[12px] text-night-mute transition-colors hover:bg-white/[0.05] hover:text-night-ink"
+          >
+            <LogOut className="h-3.5 w-3.5" /> Sign out
+          </button>
+        )}
       </div>
     </aside>
   );

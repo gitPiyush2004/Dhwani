@@ -1,58 +1,56 @@
-# Reference backend
+# The API
 
-A zero-dependency Node server that implements the whole API contract in
-[../docs/API-CONTRACT.md](../docs/API-CONTRACT.md). It exists so the dashboard and the Bolna voice
-agent have something real to talk to on day 1, before Google Sheets is wired up.
+The one service the phone agent and the dashboard both call. Zero dependencies, Node 20+.
 
 ```bash
-node server/index.mjs                 # http://localhost:8787
-PORT=9000 node server/index.mjs
-npm run test:api                      # 34 assertions over the contract
+cp server/.env.example server/.env   # every key is optional; see docs/GO-LIVE.md
+node server/index.mjs                # http://localhost:8787
+npm test                             # 111 checks
 ```
 
-Then point the dashboard at it:
+On start it prints what is connected:
 
-```bash
-# .env.local in the frontend root
-VITE_API_BASE_URL=http://localhost:8787
-npm run dev
+```
+  storage    sheets: Connected to Google Sheets
+  phone      Bolna, agent 3c1f…
+  public url https://dhwani-api.onrender.com
+  messages   Twilio WhatsApp, Twilio SMS
+  chat agent Gemini gemini-3.5-flash-lite
+  login      required
 ```
 
-## What is in here
+## Modules
 
-| File | What it is |
+| File | What it does |
 | --- | --- |
-| `index.mjs` | The routes. Every endpoint in the contract, with the double-booking guard |
-| `data.mjs` | Seed data, shaped like the Google Sheet tabs |
-| `test.mjs` | The contract test. Run it before and after you change anything |
+| `index.mjs` | HTTP server and every route, with access control per route |
+| `config.mjs`, `env.mjs` | Reads `server/.env` and the environment |
+| `state.mjs` | The in-memory working copy every route reads and writes |
+| `domain.mjs` | Booking rules: slots, the overlap-aware double-booking guard, reschedule, cancel |
+| `time.mjs` | Clinic time (IST) regardless of the server's zone; parses "kal", "shaam 5 baje", "22 Oct" |
+| `store/sheets.mjs` | Google Sheets as the system of record: creates tabs, upserts rows, re-reads edits |
+| `store/file.mjs`, `store/memory.mjs` | JSON file storage without Sheets; in-memory for tests |
+| `store/schema.mjs` | Sheet columns to JSON, including human-readable doctor hours |
+| `agent/tools.mjs` | The receptionist's tools, shared by the phone agent and the chat agent |
+| `agent/prompt.mjs` | The system prompt, built from the clinic's live data |
+| `agent/brain.mjs`, `agent/gemini.mjs` | The Gemini chat agent behind the dashboard dock and test console |
+| `bolna/*.mjs` | The Bolna agent definition, API client and sync |
+| `calls.mjs` | Turns Bolna's webhook into call logs (idempotent), and the live-calls feed |
+| `messaging.mjs` | WhatsApp (Meta or Twilio) with SMS fallback |
+| `analytics.mjs` | Every dashboard number, computed from the tables |
+| `reminders.mjs` | Daily reminders for tomorrow's appointments |
+| `auth.mjs` | Dashboard login tokens, and Bolna's shared secret |
 
-## Storage is in memory
+## Endpoints beyond docs/API-CONTRACT.md
 
-Restarting resets everything. Every place that must become a Sheets read or write is marked:
-
-```bash
-grep -rn "TODO(sheets)" server/index.mjs
-```
-
-Those markers are the work list. See [../docs/BACKEND.md](../docs/BACKEND.md) for the Sheets schema,
-the caching advice and the concurrency caveat.
-
-## Useful endpoints to poke at
-
-```bash
-curl http://localhost:8787/health
-curl "http://localhost:8787/api/slots?doctorId=doc-sharma&date=2026-10-20"
-curl http://localhost:8787/api/calls | head -c 400
-
-# book a slot, then try the same one again and watch the 409
-curl -X POST http://localhost:8787/api/appointments -H 'Content-Type: application/json' \
-  -d '{"patientName":"Test","phone":"+91 90000 00000","doctorId":"doc-sharma","startsAt":"2026-10-20T09:00:00.000Z","reason":"Check-up"}'
-```
-
-## Enabling CORS for the dashboard
-
-Already handled. `Access-Control-Allow-Origin` is `*` unless `CORS_ORIGINS` is set:
-
-```bash
-CORS_ORIGINS=https://app.clinicvaani.in,http://localhost:5173 node server/index.mjs
-```
+| Endpoint | Who | What |
+| --- | --- | --- |
+| `GET/POST /api/bolna/tools/:name` | Bolna, mid-call | `check_slots`, `book_appointment`, `find_appointments`, `reschedule_appointment`, `cancel_appointment`, `get_clinic_info`. Bearer `BOLNA_SECRET` |
+| `POST /api/bolna/webhook?token=` | Bolna, every status change | Live calls while ringing and talking, then one call log per execution |
+| `POST /api/auth/login`, `GET /api/auth/status` | Dashboard | Password login when `ADMIN_PASSWORD` is set |
+| `GET /api/public/config` | Landing page | The real number to dial |
+| `GET /api/integrations` | Dashboard | What is connected |
+| `POST /api/integrations/bolna/sync`, `/link-number` | Dashboard | Create or update the phone agent; link the clinic number |
+| `POST /api/agent/call` | Dashboard | "Call me": the phone agent rings a number |
+| `GET /api/calls/:id/recording` | Dashboard | The call recording, proxied with Bolna's auth |
+| `POST /api/reminders/run` | Dashboard | Send tomorrow's reminders now |

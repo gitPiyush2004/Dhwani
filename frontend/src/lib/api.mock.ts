@@ -524,6 +524,6 @@ export async function getAgentReply(message: string): Promise<string> {
   if (/(thank|thanks|dhanyavad|shukriya|bye)/.test(m))
     return "Aapka din shubh rahe! Sharma Family Clinic se sampark karne ke liye dhanyavaad. Take care!";
   if (/(hi|hello|namaste|hey)/.test(m))
-    return "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon. Appointment book karna hai, ya koi sawaal hai?";
+    return "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon. Appointment book karna hai, ya koi sawaal hai?";
   return "Samajh gayi. Main note kar rahi hoon. Appointment book karna hai, fees jaanni hai, ya clinic ke timings? Aap Hindi, English ya Hinglish mein bata sakte hain.";
 }

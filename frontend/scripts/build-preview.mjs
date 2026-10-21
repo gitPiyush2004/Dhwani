@@ -6,7 +6,7 @@ import path from "node:path";
 
 const ROOT = process.cwd();
 const DIR = path.join(ROOT, "dist-preview");
-const OUT = path.join(DIR, "aawazdoc-preview.html");
+const OUT = path.join(DIR, "dhwani-preview.html");
 
 if (!fs.existsSync(DIR)) {
   console.error("dist-preview/ not found. Run `vite build --config vite.preview.config.ts` first.");
