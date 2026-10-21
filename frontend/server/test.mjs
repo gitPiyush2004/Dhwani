@@ -261,6 +261,8 @@ check(
   sampleDoctors.every((d) => JSON.stringify(parseAvailability(formatAvailability(d.availability))) ===
     JSON.stringify([...d.availability].sort((a, b) => a.day - b.day || a.start.localeCompare(b.start))))
 );
+check("a full week (Sun-Sat) parses to all seven days", parseAvailability("Sun-Sat 00:00-24:00").length === 7);
+check("a wrapping range (Sat-Mon) parses to three days", parseAvailability("Sat-Mon 10:00-12:00").map((b) => b.day).join() === "0,1,6");
 check("the human format reads well", formatAvailability(sampleDoctors[0].availability) === "Mon-Sat 09:00-13:00, 17:00-20:00");
 
 console.log("\n== Bolna tools (called mid-call) ==");

@@ -28,6 +28,7 @@ import {
   addDays,
   clinicDate,
   clinicInstant,
+  clinicTime,
   resolveDate,
   resolveTime,
   spokenDate,
@@ -40,7 +41,10 @@ const MAX_DAYS_AHEAD = 90;
 const doctorList = () =>
   db.doctors.map((d) => `${d.name} (${d.speciality}, fee Rs ${d.fee})`).join("; ");
 
-const pickSlots = (slots, n = 6) => {
+const pickSlots = (all, n = 6) => {
+  // Suggest daytime first; night slots stay bookable if the caller asks.
+  const day = all.filter((t) => t >= "09:00" && t < "21:00");
+  const slots = day.length >= Math.min(n, 3) ? day : all;
   if (slots.length <= n) return slots;
   // Spread the offer across the day instead of six consecutive morning slots.
   const step = slots.length / n;
@@ -77,6 +81,13 @@ const confirmationLine = (what = "confirmation") =>
 
 const isPlaceholder = (v) => !v || /[{}%]|from_number|unknown|caller/i.test(String(v));
 
+/** Booked "10:30 AM" times for a doctor on a day. */
+function takenTimes(doctor, date) {
+  return db.appointments
+    .filter((a) => a.doctorId === doctor.id && a.status !== "cancelled" && clinicDate(a.startsAt) === date)
+    .map((a) => time12(clinicTime(a.startsAt)));
+}
+
 /* --- tools ------------------------------------------------------------ */
 
 export function checkSlots({ doctor: doctorQuery, date: dateInput }) {
@@ -88,31 +99,35 @@ export function checkSlots({ doctor: doctorQuery, date: dateInput }) {
   const slots = freeSlots(doctor, day.date);
   if (slots.length) {
     const offer = pickSlots(slots);
+    // A long list of times is hard for the model to read back; describe it instead.
+    const busy = slots.length > 24;
+    const message = busy
+      ? `${doctor.name} is available on ${spokenDate(day.date)} from ${time12(slots[0])} to ${time12(slots[slots.length - 1])}, every ${doctor.slotDurationMin} minutes${takenTimes(doctor, day.date).length ? ` (already booked: ${takenTimes(doctor, day.date).join(", ")})` : ""}. Suggest at most three times, for example ${pickSlots(slots, 3).map(time12).join(", ")}, or book the time the caller asks for if it is free.`
+      : `${doctor.name} has ${slots.length} free slots on ${spokenDate(day.date)}. Suggest at most three, for example ${pickSlots(slots, 3).map(time12).join(", ")}. If the caller asks for a specific time, it is free only if it is in all_free_times: ${slots.map(time12).join(", ")}.`;
     return {
+      message,
       ok: true,
       doctor: doctor.name,
       date: day.date,
       day: spokenDate(day.date),
       available_times: offer.map(time12),
-      all_free_times: slots.map(time12),
+      all_free_times: busy ? undefined : slots.map(time12),
       total_free: slots.length,
-      message: `${doctor.name} has ${slots.length} free slots on ${spokenDate(day.date)}. Suggest at most three, for example ${pickSlots(slots, 3).map(time12).join(", ")}. If the caller asks for a specific time, it is free only if it is in all_free_times: ${slots.map(time12).join(", ")}.`,
     };
   }
 
   const next = nextAvailable(doctor, addDays(day.date, 1));
   const worksThatDay = doctor.availability.some((b) => b.day === new Date(`${day.date}T00:00:00Z`).getUTCDay());
-  const reason = worksThatDay ? "is fully booked" : "does not see patients";
   return {
+    message: next
+      ? `No free time with ${doctor.name} on ${spokenDate(day.date)} (${worksThatDay ? "fully booked" : "not working that day"}). Say so plainly and offer ${spokenDate(next.date)} at ${pickSlots(next.slots, 3).map(time12).join(", ")}, or another doctor.`
+      : `${doctor.name} has no free slots in the next three weeks. Offer another doctor or a call back from the clinic.`,
     ok: true,
     doctor: doctor.name,
     date: day.date,
     available_times: [],
     next_available_date: next?.date ?? null,
     next_available_times: next ? pickSlots(next.slots, 3).map(time12) : [],
-    message: next
-      ? `${doctor.name} ${reason} on ${spokenDate(day.date)}. The next free day is ${spokenDate(next.date)}, at ${pickSlots(next.slots, 3).map(time12).join(", ")}.`
-      : `${doctor.name} ${reason} on ${spokenDate(day.date)} and has no free slots in the next three weeks. Offer another doctor or a call back from the clinic.`,
   };
 }
 

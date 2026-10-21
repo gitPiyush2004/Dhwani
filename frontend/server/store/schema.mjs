@@ -124,7 +124,7 @@ export function parseAvailability(v) {
       const [a, b] = token.split("-").map((x) => DAY_KEYS.indexOf(x.slice(0, 3)));
       if (a < 0) continue;
       if (b === undefined || b < 0) days.add(a);
-      else for (let d = a; d !== (b + 1) % 7; d = (d + 1) % 7) days.add(d);
+      else for (let i = 0; i <= (b - a + 7) % 7; i++) days.add((a + i) % 7);
     }
     for (const r of timePart.matchAll(/(\d{1,2}[:.]\d{2})\s*-\s*(\d{1,2}[:.]\d{2})/g)) {
       for (const day of days) out.push({ day, start: norm(r[1]), end: norm(r[2]) });

@@ -67,6 +67,7 @@ import {
 } from "./domain.mjs";
 import { messagingStatus, notifyPatient } from "./messaging.mjs";
 import { runReminders, startReminderSchedule } from "./reminders.mjs";
+import { reconcileCalls, startReconcile } from "./bolna/reconcile.mjs";
 import { db } from "./state.mjs";
 import { createStore } from "./store/index.mjs";
 import { clinicDate, resolveDate } from "./time.mjs";
@@ -215,6 +216,14 @@ route("POST", /^\/api\/integrations\/sheets\/refresh$/, "admin", async (_req, re
   if (!ctx.store.refresh) return fail(res, 400, "Google Sheets is not the storage backend");
   await ctx.store.refresh();
   json(res, 200, ctx.store.status());
+});
+
+route("POST", /^\/api\/integrations\/bolna\/reconcile$/, "admin", async (_req, res) => {
+  try {
+    json(res, 200, await reconcileCalls());
+  } catch (err) {
+    fail(res, 502, err.message);
+  }
 });
 
 route("POST", /^\/api\/reminders\/run$/, "admin", async (_req, res) => json(res, 200, await runReminders({ force: true })));
@@ -762,6 +771,7 @@ if (isMain) {
     console.log(`  chat agent ${integrations.llm() ? `${llmProvider()} ${llmModel()}` : "rule-based (set OPENAI_API_KEY or GEMINI_API_KEY)"}`);
     console.log(`  login      ${authRequired() ? "required" : "open (set ADMIN_PASSWORD before going public)"}`);
     startReminderSchedule();
+    startReconcile();
   });
 
   const shutdown = async () => {
