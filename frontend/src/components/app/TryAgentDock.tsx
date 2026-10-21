@@ -17,7 +17,7 @@ import type { AgentMessage } from "@/types";
 import { cn } from "@/lib/utils";
 
 const FALLBACK_GREETING =
-  "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon. Appointment book karna hai, ya kuch poochna hai?";
+  "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon. Appointment book karna hai, ya kuch poochna hai?";
 
 const SUGGESTIONS = [
   "Mujhe kal appointment chahiye",
@@ -46,7 +46,7 @@ export function TryAgentDock() {
   const [open, setOpen] = useState(false);
   const clinicQ = useQuery({ queryKey: ["clinic"], queryFn: getClinic });
   const greeting = clinicQ.data?.agent?.greeting || clinicQ.data?.greeting || FALLBACK_GREETING;
-  const agentName = clinicQ.data?.agent?.name || "AawazDoc";
+  const agentName = clinicQ.data?.agent?.name || "Dhwani";
 
   const [messages, setMessages] = useState<ChatLine[]>([]);
   const [sessionId, setSessionId] = useState(newSession);

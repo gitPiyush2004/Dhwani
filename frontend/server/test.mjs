@@ -369,7 +369,7 @@ console.log("\n== file storage survives a restart ==");
   const { mkdtempSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const dir = mkdtempSync(join(tmpdir(), "aawazdoc-"));
+  const dir = mkdtempSync(join(tmpdir(), "dhwani-"));
   config.store.dataFile = join(dir, "db.json");
   const { createFileStore } = await import("./store/file.mjs");
   const { db } = await import("./state.mjs");

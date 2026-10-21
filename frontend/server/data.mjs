@@ -79,7 +79,7 @@ const SUMMARY = {
 
 const TRANSCRIPTS = {
   booked: (name) => [
-    { speaker: "ai", text: "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon." },
+    { speaker: "ai", text: "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon." },
     { speaker: "patient", text: "Mujhe kal doctor ko dikhana hai." },
     { speaker: "ai", text: "Bilkul. Kal ke liye 10:30 AM, 12:00 PM aur 5:30 PM available hain." },
     { speaker: "patient", text: "12 baje ho jaye toh badhiya." },
@@ -269,18 +269,18 @@ export function seed({ demo = true } = {}) {
     phone: "+91 98110 22334",
     languages: ["Hindi", "English", "Hinglish"],
     greeting:
-      "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon. Kaise madad kar sakti hoon?",
+      "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon. Kaise madad kar sakti hoon?",
     faqs,
     escalation: {
       phone: "+91 98110 22334",
       triggers: ["emergency keywords", "patient asks for a human", "ai not confident"],
     },
     agent: {
-      name: "AawazDoc",
+      name: "Dhwani",
       voice: "Meera (warm, Indian English + Hindi)",
       speed: 1,
       greeting:
-        "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon. Kaise madad kar sakti hoon?",
+        "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon. Kaise madad kar sakti hoon?",
       fallback:
         "Sorry, main yeh samajh nahi payi. Main aapko clinic staff se connect kar deti hoon.",
       guardrails: [

@@ -9,7 +9,7 @@ const BARS = [
 ];
 
 /**
- * The AawazDoc mark: lime voice bars on an ink tile. Animation is opt-in so
+ * The Dhwani mark: lime voice bars on an ink tile. Animation is opt-in so
  * avatars inside transcripts and chat bubbles stay static and cheap to paint.
  */
 export function WaveMark({
@@ -61,8 +61,10 @@ export function Logo({
     <span className={cn("inline-flex items-center gap-2.5", className)}>
       <WaveMark animated className={markClassName} />
       {showText && (
-        <span className="text-[17px] font-semibold tracking-[-0.02em]">
-          Aawaz<span className={onDark ? "text-night-mute" : "text-ink3"}>Doc</span>
+        <span
+          className={cn("text-[17px] font-semibold tracking-[-0.02em]", onDark ? "text-night-ink" : "text-ink")}
+        >
+          Dhwani
         </span>
       )}
     </span>

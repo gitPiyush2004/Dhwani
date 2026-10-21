@@ -46,7 +46,7 @@ const clinic: Clinic = {
   phone: "+91 98110 22334",
   languages: ["Hindi", "English", "Hinglish"],
   greeting:
-    "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon, aapki AI receptionist. Aap Hindi, English ya Hinglish mein baat kar sakte hain. Kaise madad kar sakti hoon?",
+    "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon, aapki AI receptionist. Aap Hindi, English ya Hinglish mein baat kar sakte hain. Kaise madad kar sakti hoon?",
   faqs: [
     {
       id: "faq-1",
@@ -89,11 +89,11 @@ const clinic: Clinic = {
     triggers: ["emergency keywords", "patient asks for a human", "ai not confident"],
   },
   agent: {
-    name: "AawazDoc",
+    name: "Dhwani",
     voice: "Meera (warm, Indian English + Hindi)",
     speed: 1,
     greeting:
-      "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon. Kaise madad kar sakti hoon?",
+      "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon. Kaise madad kar sakti hoon?",
     fallback:
       "Sorry, main yeh samajh nahi payi. Main aapko clinic staff se connect kar deti hoon.",
     guardrails: [
@@ -182,11 +182,11 @@ const first = (name: string) => name.split(" ")[0];
 
 const GREETING: Record<Language, string> = {
   Hinglish:
-    "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon. Kaise madad kar sakti hoon?",
+    "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon. Kaise madad kar sakti hoon?",
   Hindi:
     "नमस्ते! शर्मा फैमिली क्लिनिक में आपका स्वागत है। मैं आवाज़डॉक हूँ। कैसे मदद कर सकती हूँ?",
   English:
-    "Hello, thank you for calling Sharma Family Clinic. This is AawazDoc. How may I help you?",
+    "Hello, thank you for calling Sharma Family Clinic. This is Dhwani. How may I help you?",
 };
 
 function bookingLines(name: string, lang: Language): Line[] {
@@ -722,7 +722,7 @@ const onboarding: OnboardingStep[] = [
   { id: "ob-1", label: "Clinic details", description: "Name, address and languages", done: true },
   { id: "ob-2", label: "Doctors and timings", description: "Who callers can book with", done: true, to: "/app/settings" },
   { id: "ob-3", label: "Greeting and FAQs", description: "What the agent says first", done: true, to: "/app/agent" },
-  { id: "ob-4", label: "Connect your clinic number", description: "Forward calls to AawazDoc", done: false, to: "/app/settings" },
+  { id: "ob-4", label: "Connect your clinic number", description: "Forward calls to Dhwani", done: false, to: "/app/settings" },
   { id: "ob-5", label: "Make a test call", description: "Hear the agent before going live", done: false, to: "/app/agent" },
 ];
 

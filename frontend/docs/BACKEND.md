@@ -175,7 +175,7 @@ The full list of environment variables is in `server/.env.example`. The basics:
 ```bash
 PORT=8787
 CORS_ORIGINS=*                       # comma separated in production
-# CORS_ORIGINS=https://app.clinicvaani.in,http://localhost:5173
+# CORS_ORIGINS=https://app.dhwani.in,http://localhost:5173
 ```
 
 Also needed once Sheets and messaging are wired: the `GOOGLE_*` and `SHEET_ID` variables above, plus

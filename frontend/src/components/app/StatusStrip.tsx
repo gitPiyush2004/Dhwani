@@ -90,7 +90,7 @@ export function StatusStrip({ onOpenCommand }: { onOpenCommand: () => void }) {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-bg">
       <div className="flex h-14 items-center gap-3 px-4 lg:px-8">
-        <Link to="/" className="md:hidden" aria-label="AawazDoc home">
+        <Link to="/" className="md:hidden" aria-label="Dhwani home">
           <Logo showText={false} />
         </Link>
 

@@ -205,7 +205,7 @@ export function CommandPalette({
         <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
           <span className="flex items-center gap-1.5 text-[11px] text-ink3">
             <Sparkles className="h-3 w-3" />
-            AawazDoc
+            Dhwani
           </span>
           <span className="flex items-center gap-2 text-[11px] text-ink3">
             <Kbd>↑</Kbd>

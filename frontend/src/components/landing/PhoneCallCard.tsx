@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 type Line = { speaker: "ai" | "patient"; text: string };
 
 const SCRIPT: Line[] = [
-  { speaker: "ai", text: "Namaste! Sharma Family Clinic mein aapka swagat hai. Main AawazDoc hoon." },
+  { speaker: "ai", text: "Namaste! Sharma Family Clinic mein aapka swagat hai. Main Dhwani hoon." },
   { speaker: "patient", text: "Mujhe kal doctor ko dikhana hai." },
   { speaker: "ai", text: "Bilkul. Kal ke liye 10:30 AM, 12:00 PM aur 5:30 PM available hain." },
   { speaker: "patient", text: "12 baje ho jaye toh badhiya." },
@@ -134,7 +134,7 @@ export function PhoneCallCard() {
         <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-3">
           <span className="flex items-center gap-2 text-[11.5px] text-night-mute">
             <Wavebars />
-            AawazDoc is listening
+            Dhwani is listening
           </span>
           <span className="rounded-full bg-primary/15 px-2.5 py-1 font-mono text-[10.5px] uppercase tracking-[0.12em] text-primary">
             Hinglish

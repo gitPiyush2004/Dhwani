@@ -1,4 +1,4 @@
-# aawazdoc
+# Dhwani
 
 An AI phone receptionist for small clinics in India. A patient calls, the AI answers in Hindi, English
 or Hinglish, books the appointment into the clinic's Google Sheet and sends a WhatsApp confirmation.

@@ -24,7 +24,7 @@ export function Sidebar() {
   return (
     <aside className="sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col border-r border-night-line bg-night text-night-ink md:flex">
       <div className="flex h-14 items-center px-5">
-        <Link to="/" aria-label="AawazDoc home" className="text-night-ink">
+        <Link to="/" aria-label="Dhwani home" className="text-night-ink">
           <Logo onDark />
         </Link>
       </div>

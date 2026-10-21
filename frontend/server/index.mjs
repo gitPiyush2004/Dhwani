@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// AawazDoc / ClinicVaani API
+// Dhwani API
 //
 // The one service that both the phone agent (Bolna) and the dashboard call.
 // It owns the data and is the only writer, so the two always agree.
@@ -130,7 +130,7 @@ const route = (method, pattern, access, handler) => routes.push({ method, patter
 /* --- health, auth, public config ------------------------------------ */
 
 route("GET", /^\/health$/, "public", (_req, res) =>
-  json(res, 200, { ok: true, service: "clinicvaani-api", time: new Date().toISOString() })
+  json(res, 200, { ok: true, service: "dhwani-api", time: new Date().toISOString() })
 );
 
 route("GET", /^\/api\/auth\/status$/, "public", (req, res) =>
@@ -748,7 +748,7 @@ const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split
 if (isMain) {
   const server = createApiServer();
   server.listen(config.port, async () => {
-    console.log(`ClinicVaani API listening on http://localhost:${config.port}`);
+    console.log(`Dhwani API listening on http://localhost:${config.port}`);
     try {
       await server.ready;
     } catch {

@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// AawazDoc domain types.
+// Dhwani domain types.
 // These mirror the shapes the real backend will return, so replacing the mock
 // layer in src/lib/api.ts with real REST calls changes nothing in the UI.
 // ---------------------------------------------------------------------------

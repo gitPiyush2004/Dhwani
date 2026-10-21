@@ -3,7 +3,7 @@
 # it asks for. Docs: frontend/docs/GO-LIVE.md
 services:
   - type: web
-    name: aawazdoc-api
+    name: dhwani-api
     runtime: node
     rootDir: frontend
     plan: free
@@ -15,9 +15,9 @@ services:
       - key: NODE_VERSION
         value: "22"
       - key: PUBLIC_URL
-        sync: false # https://aawazdoc-api.onrender.com (this service's URL)
+        sync: false # https://dhwani-api.onrender.com (this service's URL)
       - key: CORS_ORIGINS
-        sync: false # https://aawazdoc-dashboard.onrender.com
+        sync: false # https://dhwani-dashboard.onrender.com
       - key: ADMIN_PASSWORD
         sync: false
       - key: SHEET_ID
@@ -36,7 +36,7 @@ services:
         value: sheets
 
   - type: web
-    name: aawazdoc-dashboard
+    name: dhwani-dashboard
     runtime: static
     rootDir: frontend
     buildCommand: npm ci && npm run build
@@ -47,4 +47,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_BASE_URL
-        sync: false # https://aawazdoc-api.onrender.com
+        sync: false # https://dhwani-api.onrender.com

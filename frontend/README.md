@@ -1,4 +1,4 @@
-# ClinicVaani
+# Dhwani
 
 An AI phone receptionist for small clinics. A patient calls, the AI answers in **Hindi, English or
 Hinglish**, books the appointment, and sends a WhatsApp confirmation. The clinic sees every call,
@@ -10,9 +10,8 @@ the API keeps everything in a Google Sheet, sends WhatsApp confirmations, and th
 call, transcript and recording. **[docs/GO-LIVE.md](docs/GO-LIVE.md)** takes you from a clone to a real
 phone number.
 
-> **A note on the name.** The plan and this repo are called **ClinicVaani**. The UI currently ships
-> with the working brand **AawazDoc**, which is what the mock data and the landing page say. See
-> [Renaming the product](#renaming-the-product) if you want one name everywhere.
+> **The name.** Dhwani (ध्वनि) means *sound* or *voice*: the product is the clinic's voice on the
+> phone. It is also the name the AI introduces itself with on every call.
 
 ---
 
@@ -209,19 +208,6 @@ scripts/                the single-file preview build
 
 ---
 
-## Renaming the product
-
-If the team wants **ClinicVaani** everywhere instead of **AawazDoc**, these are the places:
-
-- `src/components/Logo.tsx` splits the wordmark into two spans, so it is one edit.
-- `index.html` and `preview.html` titles and meta description.
-- `src/pages/Landing.tsx` and `src/components/landing/Footer.tsx` copy.
-- `src/lib/mockData.ts` and `server/data.mjs` set `clinic.agent.name`, which is the name the AI
-  introduces itself with. Change it in both or the demo will disagree with itself.
-- `src/components/app/TryAgentDock.tsx` and `src/components/CallDrawer.tsx` labels.
-
----
-
 ## What is real, and what is not yet
 
 Real, against the backend: bookings from the phone agent with the double-booking guard, the call log
@@ -237,4 +223,4 @@ Not yet:
   the browser.
 - The plan, minutes and billing screen reads usage from real call durations, but there is no payment.
 - One API instance only: the double-booking guard is in its memory, and Sheets has no transactions.
-- AawazDoc never gives medical advice. Emergencies are directed to 108 and a human.
+- Dhwani never gives medical advice. Emergencies are directed to 108 and a human.

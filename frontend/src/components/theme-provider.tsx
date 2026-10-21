@@ -9,7 +9,7 @@ const ThemeContext = React.createContext<{
   setTheme: (t: Theme) => void;
 }>({ theme: "light", toggle: () => {}, setTheme: () => {} });
 
-const STORAGE_KEY = "aawazdoc-theme";
+const STORAGE_KEY = "dhwani-theme";
 
 function readInitial(): Theme {
   if (typeof window === "undefined") return "light";

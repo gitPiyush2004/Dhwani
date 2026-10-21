@@ -16,7 +16,7 @@ export class ApiError extends Error {
  * blocked (private windows, strict browser settings).
  * ---------------------------------------------------------------------- */
 
-const TOKEN_KEY = "aawazdoc.token";
+const TOKEN_KEY = "dhwani.token";
 
 export function getToken(): string {
   try {
@@ -36,7 +36,7 @@ export function setToken(token: string) {
 }
 
 /** Fired when the API says the session is no longer valid. */
-export const AUTH_EXPIRED_EVENT = "aawazdoc:auth-expired";
+export const AUTH_EXPIRED_EVENT = "dhwani:auth-expired";
 
 function authHeaders(): Record<string, string> {
   const token = getToken() || API_KEY;

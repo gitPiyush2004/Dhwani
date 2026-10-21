@@ -40,7 +40,7 @@ export function Footer() {
               and confirms on WhatsApp, in Hindi, English and Hinglish.
             </p>
             <p className="mt-5 max-w-xs text-[12px] leading-relaxed text-night-mute">
-              AawazDoc never gives medical advice. Emergencies are directed to emergency services or
+              Dhwani never gives medical advice. Emergencies are directed to emergency services or
               a human.
             </p>
           </div>
@@ -95,7 +95,7 @@ export function Footer() {
 
         <div className="mt-14 flex flex-col gap-4 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[11.5px] text-night-mute">
-            © {year} AawazDoc Technologies Pvt. Ltd. All rights reserved.
+            © {year} Dhwani Technologies Pvt. Ltd. All rights reserved.
           </p>
           <button
             type="button"

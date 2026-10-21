@@ -13,7 +13,7 @@ On start it prints what is connected:
 ```
   storage    sheets: Connected to Google Sheets
   phone      Bolna, agent 3c1f…
-  public url https://aawazdoc-api.onrender.com
+  public url https://dhwani-api.onrender.com
   messages   Twilio WhatsApp, Twilio SMS
   chat agent Gemini gemini-3.5-flash-lite
   login      required

@@ -266,7 +266,7 @@ export function CallDrawer({
                           <span className="min-w-0 flex-1">
                             <span className="mb-1 flex items-center gap-2">
                               <span className="label text-ink3">
-                                {isAI ? "AawazDoc" : call.callerName.split(" ")[0]}
+                                {isAI ? "Dhwani" : call.callerName.split(" ")[0]}
                               </span>
                               <span className="tnum font-mono text-[10px] text-ink3">
                                 {clockTime(line.startSec)}
