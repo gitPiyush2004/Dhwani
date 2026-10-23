@@ -14,7 +14,8 @@
     "test:sheets": "node server/test.sheets.mjs",
     "test": "node server/test.mjs && node server/test.sheets.mjs",
     "start:api": "node server/index.mjs",
-    "bolna:sync": "node server/scripts/bolna-sync.mjs"
+    "bolna:sync": "node server/scripts/bolna-sync.mjs",
+    "live": "node scripts/live.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",

@@ -34,6 +34,14 @@ npm test                               # 111 checks: the API contract and the Sh
 
 With no keys at all, the API stores data in `server/.data/db.json` and the dashboard works end to end.
 
+### Or everything at once
+
+```bash
+npm run live    # tunnel + API + re-point the Bolna agent + dashboard, Ctrl+C stops all
+```
+
+Run this after a restart: the tunnel URL changes each time and this keeps Bolna in step.
+
 ## 2. Google Sheet (the data)
 
 1. In Google Cloud, create a project, enable the **Google Sheets API**, and create a **service account**.
@@ -97,7 +105,7 @@ Without this, bookings still work and each appointment honestly shows "not sent"
 promise a message.
 
 - **Fastest for a demo:** the Twilio WhatsApp sandbox. Set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
-  `TWILIO_WHATSAPP_FROM=whatsapp:+14155238886`, and join the sandbox from your phone.
+  `TWILIO_WHATSAPP_FROM=whatsapp:+1…` (the WhatsApp number shown in your Twilio console; older accounts use the shared sandbox +14155238886), and join the sandbox from your phone.
 - **Real:** Meta WhatsApp Cloud API with an approved template whose body has 4 variables (name,
   date and time, doctor, address): `META_WA_TOKEN`, `META_WA_PHONE_NUMBER_ID`, `META_WA_TEMPLATE`.
 - **SMS fallback:** `TWILIO_SMS_FROM`.
